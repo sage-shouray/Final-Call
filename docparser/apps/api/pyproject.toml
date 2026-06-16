@@ -1,0 +1,76 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "docparser-api"
+version = "0.1.0"
+description = "DocParser FastAPI backend — SAP Document Processing Service"
+requires-python = ">=3.11"
+dependencies = [
+    # Web framework
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    # Database
+    "motor>=3.3.2",
+    "pymongo>=4.6.1",
+    # Data validation
+    "pydantic[email]>=2.5.3",
+    "pydantic-settings>=2.1.0",
+    # Auth
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    # File handling
+    "python-multipart>=0.0.7",
+    "pillow>=10.2.0",
+    "aiofiles>=23.2.1",
+    "pdf2image>=1.17.0",
+    # HTTP client
+    "aiohttp>=3.9.1",
+    # Async S3
+    "aioboto3>=12.3.0",
+    # Task queue
+    "celery[redis]>=5.3.6",
+    "redis>=5.0.1",
+    # Resilience
+    "tenacity>=8.2.3",
+    "pybreaker>=1.1.0",
+    # Observability
+    "structlog>=24.1.0",
+    "sentry-sdk[fastapi]>=1.40.3",
+    # Config
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.4",
+    "pytest-asyncio>=0.23.3",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.26.0",
+    "ruff>=0.1.14",
+    "mypy>=1.8.0",
+    "pre-commit>=3.6.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+select = ["E", "F", "I", "N", "W", "UP", "ANN", "B", "SIM"]
+ignore = ["ANN101", "ANN102", "ANN401"]
+
+[tool.ruff.isort]
+known-first-party = ["src"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-v --cov=src --cov-report=term-missing"

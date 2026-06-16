@@ -1,0 +1,57 @@
+"""AuditRepository — append-only log of every significant action."""
+from datetime import UTC, datetime
+from typing import Any
+
+import structlog
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo import DESCENDING
+
+from src.repositories.base import BaseRepository
+
+log = structlog.get_logger(__name__)
+
+_COLLECTION = "audit_logs"
+
+
+class AuditRepository(BaseRepository):
+    def __init__(self, db: AsyncIOMotorDatabase) -> None:  # type: ignore[type-arg]
+        super().__init__(_COLLECTION, db)
+
+    async def log_action(
+        self,
+        document_id: str,
+        action: str,
+        performed_by: str,
+        details: dict[str, Any] | None = None,
+        ip_address: str = "",
+    ) -> str:
+        """Append an audit entry and return its inserted _id."""
+        entry: dict[str, Any] = {
+            "document_id": document_id,
+            "action": action,
+            "performed_by": performed_by,
+            "timestamp": datetime.now(UTC),
+            "details": details or {},
+            "ip_address": ip_address,
+        }
+        inserted_id = await self.create(entry)
+        log.info(
+            "audit logged",
+            document_id=document_id,
+            action=action,
+            by=performed_by,
+        )
+        return inserted_id
+
+    async def get_document_history(
+        self,
+        document_id: str,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Return all audit entries for a document, newest first."""
+        return await self.list(
+            filter={"document_id": document_id},
+            sort=[("timestamp", DESCENDING)],
+            limit=limit,
+        )

@@ -1,0 +1,22 @@
+{
+  "name": "docparser",
+  "private": true,
+  "version": "0.1.0",
+  "description": "DocParser — Intelligent SAP Document Processing monorepo",
+  "packageManager": "pnpm@8.14.1",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=8"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @docparser/web dev",
+    "build:web": "pnpm --filter @docparser/web build",
+    "type-check": "pnpm --filter @docparser/web type-check && pnpm --filter @docparser/shared-types type-check",
+    "lint": "pnpm --filter @docparser/web lint",
+    "format": "pnpm --filter @docparser/web format"
+  },
+  "workspaces": [
+    "apps/web",
+    "packages/*"
+  ]
+}

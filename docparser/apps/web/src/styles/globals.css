@@ -1,0 +1,175 @@
+/* Google Fonts — loaded here so the CSS layer owns font loading */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── CSS Custom Properties ───────────────────────────────────────────────── */
+@layer base {
+  :root {
+    /* Surface */
+    --color-bg:        #FAFAF9;
+    --color-surface:   #FFFFFF;
+    --color-surface-2: #F4F4F2;
+    --color-surface-3: #EBEBEA;
+
+    /* Borders */
+    --color-border:   #E5E5E3;
+    --color-border-2: #D4D4D1;
+
+    /* Text */
+    --color-text-1: #0F1117;
+    --color-text-2: #4A4A52;
+    --color-text-3: #8C8C96;
+
+    /* Brand — Indigo */
+    --color-indigo:       #4F46E5;
+    --color-indigo-light: #EEF2FF;
+
+    /* Semantic — Green */
+    --color-green:       #16A34A;
+    --color-green-light: #F0FDF4;
+
+    /* Semantic — Amber */
+    --color-amber:       #B45309;
+    --color-amber-light: #FFFBEB;
+
+    /* Semantic — Red */
+    --color-red:       #DC2626;
+    --color-red-light: #FEF2F2;
+
+    /* Typography */
+    --ff-body:    'Inter', sans-serif;
+    --ff-display: 'DM Sans', sans-serif;
+    --ff-mono:    'JetBrains Mono', monospace;
+  }
+
+  /* ── Reset ──────────────────────────────────────────────────────────────── */
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text-1);
+    font-family: var(--ff-body);
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  #root {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-primary-500;
+  }
+
+  ::selection {
+    background-color: var(--color-indigo-light);
+    color: var(--color-indigo);
+  }
+
+  /* ── Scrollbar — thin and unobtrusive ───────────────────────────────────── */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-border-2);
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-text-3);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-2) transparent;
+  }
+}
+
+/* ── Reusable component classes ─────────────────────────────────────────── */
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-50 select-none;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary-600 text-white shadow-soft-sm hover:bg-primary-700 active:bg-primary-800 focus-visible:outline-primary-500;
+  }
+
+  .btn-secondary {
+    @apply btn bg-white text-neutral-700 shadow-soft-sm ring-1 ring-neutral-200 hover:bg-neutral-50 active:bg-neutral-100 focus-visible:outline-primary-500;
+  }
+
+  .btn-ghost {
+    @apply btn text-neutral-600 hover:bg-neutral-100 active:bg-neutral-200 focus-visible:outline-primary-500;
+  }
+
+  .btn-danger {
+    @apply btn bg-danger-600 text-white shadow-soft-sm hover:bg-danger-700 active:bg-danger-800 focus-visible:outline-danger-500;
+  }
+
+  .card {
+    @apply rounded-xl bg-white shadow-soft ring-1 ring-neutral-200/60;
+  }
+
+  .input {
+    @apply block w-full rounded-lg border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-900 shadow-inner-soft placeholder:text-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-200 disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-500 transition-colors;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-neutral-700;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .badge-primary  { @apply badge bg-primary-100 text-primary-700; }
+  .badge-success  { @apply badge bg-success-100 text-success-700; }
+  .badge-warning  { @apply badge bg-warning-100 text-warning-700; }
+  .badge-danger   { @apply badge bg-danger-100 text-danger-700; }
+  .badge-neutral  { @apply badge bg-neutral-100 text-neutral-600; }
+}
+
+/* ── Custom keyframes ────────────────────────────────────────────────────── */
+@keyframes slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+/* ── Utilities ──────────────────────────────────────────────────────────── */
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+    &::-webkit-scrollbar { display: none; }
+  }
+
+  .font-display { font-family: var(--ff-display); }
+  .font-mono    { font-family: var(--ff-mono); }
+}

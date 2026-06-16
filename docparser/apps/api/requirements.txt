@@ -1,0 +1,44 @@
+# Generated from pyproject.toml for Docker builds
+# Web framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Database
+motor>=3.3.2
+pymongo>=4.6.1
+
+# Data validation
+pydantic[email]>=2.5.3
+pydantic-settings>=2.1.0
+
+# Auth
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+bcrypt>=3.2.0,<5.0.0
+
+# File handling
+python-multipart>=0.0.7
+pillow>=10.2.0
+aiofiles>=23.2.1
+pdf2image>=1.17.0
+
+# HTTP client
+aiohttp>=3.9.1
+
+# Async S3
+aioboto3>=12.3.0
+
+# Task queue
+celery[redis]>=5.3.6
+redis>=5.0.1
+
+# Resilience
+tenacity>=8.2.3
+pybreaker>=1.1.0
+
+# Observability
+structlog>=24.1.0
+sentry-sdk[fastapi]>=1.40.3
+
+# Config
+python-dotenv>=1.0.0
