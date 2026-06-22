@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { CheckCircle2, Copy, ChevronDown, ChevronUp, ArrowLeft, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import type { MIROPosting, ExtractedData } from '@/types';
+import type { MIROPosting, FB60Posting, ExtractedData } from '@/types';
 import { toINR } from '@/lib/currency';
 import { cn } from '@/lib/cn';
 
@@ -27,24 +27,30 @@ export function PostingLoading({ lineItemCount }: { lineItemCount: number }) {
 // ─── Success state ─────────────────────────────────────────────────────────────
 
 interface SuccessPanelProps {
-  miro:      MIROPosting;
+  miro?:     MIROPosting | null;
+  fb60?:     FB60Posting | null;
   extracted: ExtractedData | null;
   onReset:   () => void;
 }
 
-export function SuccessPanel({ miro, extracted, onReset }: SuccessPanelProps) {
+export function SuccessPanel({ miro, fb60, extracted, onReset }: SuccessPanelProps) {
   const navigate          = useNavigate();
   const [showPayload, setShowPayload] = useState(false);
   const [copied, setCopied]           = useState(false);
 
-  function copyMiro() {
-    navigator.clipboard.writeText(miro.miro_number).then(() => {
+  const isFb60   = !miro && !!fb60;
+  const docNumber = isFb60 ? (fb60?.fb60_number ?? '') : (miro?.miro_number ?? '');
+  const label     = isFb60 ? 'FB60 Document Number' : 'MIRO Transaction Number';
+  const subtitle  = isFb60 ? 'SAP FB60 entry has been created' : 'SAP MIRO entry has been created';
+  const copyLabel = isFb60 ? 'Copy FB60 number' : 'Copy MIRO number';
+  const payload   = JSON.stringify(isFb60 ? fb60?.payload_sent : miro?.payload_sent, null, 2);
+
+  function copyNumber() {
+    navigator.clipboard.writeText(docNumber).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   }
-
-  const payload = JSON.stringify(miro.payload_sent, null, 2);
 
   return (
     <div className="flex flex-col items-center gap-6 py-4">
@@ -56,21 +62,21 @@ export function SuccessPanel({ miro, extracted, onReset }: SuccessPanelProps) {
       {/* Heading */}
       <div className="text-center">
         <h2 className="text-xl font-bold text-neutral-900">Document posted successfully</h2>
-        <p className="mt-1 text-sm text-neutral-400">SAP MIRO entry has been created</p>
+        <p className="mt-1 text-sm text-neutral-400">{subtitle}</p>
       </div>
 
-      {/* MIRO number */}
+      {/* Document number */}
       <div className="w-full max-w-sm rounded-xl border border-green-200 bg-green-50 px-6 py-5 text-center">
         <p className="text-xs font-semibold uppercase tracking-widest text-green-600">
-          MIRO Transaction Number
+          {label}
         </p>
         <p className="mt-2 font-mono text-3xl font-bold tracking-wider text-neutral-900">
-          {miro.miro_number}
+          {docNumber || '—'}
         </p>
       </div>
 
       {/* Document summary */}
-      {extracted && (
+      {extracted ? (
         <div className="flex flex-wrap items-center justify-center gap-2 text-sm text-neutral-500">
           <span className="font-mono text-xs">{extracted.invoice_no}</span>
           <span className="text-neutral-200">·</span>
@@ -78,7 +84,7 @@ export function SuccessPanel({ miro, extracted, onReset }: SuccessPanelProps) {
           <span className="text-neutral-200">·</span>
           <span className="font-medium text-neutral-700">{toINR(Number(extracted.gross_amount) || 0)}</span>
         </div>
-      )}
+      ) : null}
 
       {/* Collapsible payload */}
       <div className="w-full max-w-2xl rounded-xl border border-neutral-200">
@@ -90,13 +96,13 @@ export function SuccessPanel({ miro, extracted, onReset }: SuccessPanelProps) {
           View payload sent
           {showPayload ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
-        {showPayload && (
+        {showPayload ? (
           <div className="border-t border-neutral-100 px-4 pb-4">
             <pre className="max-h-56 overflow-y-auto rounded-lg bg-neutral-900 p-4 text-xs text-green-300 font-mono scrollbar-thin">
               {payload}
             </pre>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Action buttons */}
@@ -112,7 +118,7 @@ export function SuccessPanel({ miro, extracted, onReset }: SuccessPanelProps) {
 
         <button
           type="button"
-          onClick={copyMiro}
+          onClick={copyNumber}
           className={cn(
             'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors',
             copied
@@ -121,7 +127,7 @@ export function SuccessPanel({ miro, extracted, onReset }: SuccessPanelProps) {
           )}
         >
           <Copy className="h-4 w-4" />
-          {copied ? 'Copied!' : 'Copy MIRO number'}
+          {copied ? 'Copied!' : copyLabel}
         </button>
 
         <button

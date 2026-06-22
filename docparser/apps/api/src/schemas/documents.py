@@ -16,8 +16,10 @@ class DocumentListItem(BaseModel):
     uploaded_at: str
     vendor_name: str = ""
     amount: str = ""
+    invoice_subtype: str = ""
     grn_number: str = ""
     miro_number: str = ""
+    fb60_number: str = ""
 
 
 class DocumentListResponse(BaseModel):
@@ -69,18 +71,20 @@ class GRNTriggerResponse(BaseModel):
     message: str
 
 
-class DocumentResponse(BaseModel):
-    """Serialised document returned to the frontend.
+class FB60TriggerResponse(BaseModel):
+    document_id: str
+    status: str
+    message: str
 
-    All MongoDB-specific types (ObjectId, Decimal128, datetime) have already
-    been converted to JSON-safe primitives by serialize_doc() before this
-    model is constructed.
-    """
+
+class DocumentResponse(BaseModel):
+    """Serialised document returned to the frontend."""
 
     id: str
     document_id: str
     type: str
     tcode: str
+    invoice_subtype: str | None = None
     status: str
     uploaded_by: str
     uploaded_at: str
@@ -89,6 +93,7 @@ class DocumentResponse(BaseModel):
     sap_validation: dict[str, Any] | None = None
     grn_posting: dict[str, Any] | None = None
     miro_posting: dict[str, Any] | None = None
+    fb60_posting: dict[str, Any] | None = None
     retry_count: int
     error_log: list[dict[str, Any]]
     created_at: str

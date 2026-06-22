@@ -27,7 +27,7 @@ from tenacity import (
 
 from src.config import settings
 from src.exceptions import SAPCircuitOpenError, SAPConnectionError
-from src.schemas.sap import GRNPayload, GRNResponse, MIROPayload, MIROResponse, SAPPOResponse
+from src.schemas.sap import FB60Payload, FB60Response, GRNPayload, GRNResponse, MIROPayload, MIROResponse, SAPPOResponse
 
 log = structlog.get_logger(__name__)
 
@@ -412,6 +412,36 @@ class SAPService:
         return MIROResponse(
             miro_number=miro_number,
             status=status,
+            message=message,
+            sap_response=raw,
+            success=success,
+        )
+
+
+    async def post_fb60(self, payload: FB60Payload) -> FB60Response:
+        """Post a Non-PO invoice to SAP FB60."""
+        import re as _re
+        log.info("posting FB60 to SAP")
+        url = self._sap_url("zfb60/fb60post")
+        raw_payload = SAPService._clean_numbers(payload.model_dump())
+        raw: dict[str, Any] = await self._http_post(url, raw_payload)
+
+        fb60_number = str(
+            raw.get("DOCREFID") or raw.get("DOC_NO") or raw.get("DOCUMENT_NO") or raw.get("FB60_NUMBER") or ""
+        ).strip()
+        message = FB60Response.parse_message(raw.get("MESSAGE", ""))
+
+        if not fb60_number and message:
+            match = _re.search(r'\b(\d{10})\b', message)
+            if match:
+                fb60_number = match.group(1)
+
+        success = bool(fb60_number)
+        log.info("FB60 response received", fb60_number=fb60_number, success=success, message=message)
+
+        return FB60Response(
+            fb60_number=fb60_number,
+            status=raw.get("STATUS", "S") if success else raw.get("STATUS", "") or "",
             message=message,
             sap_response=raw,
             success=success,

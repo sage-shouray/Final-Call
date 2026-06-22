@@ -133,6 +133,22 @@ class DocumentRepository(BaseRepository):
             },
         )
 
+    async def update_fb60_posting(
+        self, id: str, posting_data: dict[str, Any]
+    ) -> bool:
+        new_status = (
+            DocumentStatus.POSTED
+            if posting_data.get("status") == "success"
+            else DocumentStatus.EXTRACTED  # keep extracted so user can retry
+        )
+        return await self.update(
+            id,
+            {
+                "fb60_posting": posting_data,
+                "status": new_status.value,
+            },
+        )
+
     # ------------------------------------------------------------------
     # Aggregations
     # ------------------------------------------------------------------
@@ -157,8 +173,10 @@ class DocumentRepository(BaseRepository):
             "uploaded_at": 1,
             "extracted.vendor_name": 1,
             "extracted.gross_amount": 1,
+            "invoice_subtype": 1,
             "grn_posting.grn_number": 1,
             "miro_posting.miro_number": 1,
+            "fb60_posting.fb60_number": 1,
         }
         cursor = self._col.find(fq, projection).sort(srt).skip(skip).limit(limit)
         docs = await cursor.to_list(length=limit)

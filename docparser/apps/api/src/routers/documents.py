@@ -18,13 +18,14 @@ from fastapi import APIRouter, Form, Query, UploadFile
 from src.database import get_database
 from src.exceptions import NotFoundError, ValidationError
 from src.middleware.auth import CurrentUser, require_role
-from src.models.document import TCODE_MAP, Document, DocumentStatus, DocumentType, FileMetadata
+from src.models.document import TCODE_MAP, Document, DocumentStatus, DocumentType, FileMetadata, InvoiceSubtype
 from src.repositories.document_repository import DocumentRepository
 from src.schemas.documents import (
     DocumentListItem,
     DocumentListResponse,
     DocumentResponse,
     DocumentUploadResponse,
+    FB60TriggerResponse,
     GRNTriggerResponse,
     MIROTriggerResponse,
     PresignedUrlResponse,
@@ -70,6 +71,7 @@ async def upload_document(
     current_user: CurrentUser,
     file: UploadFile,
     document_type: str = Form(...),
+    invoice_subtype: str = Form(default=""),
 ) -> DocumentUploadResponse:
     # ── Validate document_type ──────────────────────────────────────────────
     try:
@@ -99,10 +101,18 @@ async def upload_document(
     # Pre-compute the S3 key so the record is consistent from the start
     s3_key = build_s3_key(doc_type.value, document_id, filename)
 
+    parsed_subtype: InvoiceSubtype | None = None
+    if invoice_subtype:
+        try:
+            parsed_subtype = InvoiceSubtype(invoice_subtype)
+        except ValueError:
+            pass
+
     doc = Document(
         document_id=document_id,
         type=doc_type,
         tcode=TCODE_MAP[doc_type],
+        invoice_subtype=parsed_subtype,
         status=DocumentStatus.UPLOADED,
         uploaded_by=current_user.sub,
         file=FileMetadata(
@@ -231,6 +241,7 @@ async def list_documents(
         extracted = safe.get("extracted") or {}
         grn = safe.get("grn_posting") or {}
         miro = safe.get("miro_posting") or {}
+        fb60 = safe.get("fb60_posting") or {}
         items.append(
             DocumentListItem(
                 id=safe["_id"],
@@ -241,8 +252,10 @@ async def list_documents(
                 uploaded_at=safe["uploaded_at"],
                 vendor_name=extracted.get("vendor_name") or "",
                 amount=str(extracted.get("gross_amount") or ""),
+                invoice_subtype=safe.get("invoice_subtype") or "",
                 grn_number=grn.get("grn_number") or "",
                 miro_number=miro.get("miro_number") or "",
+                fb60_number=fb60.get("fb60_number") or "",
             )
         )
 
@@ -278,6 +291,7 @@ async def get_document(
         document_id=safe["document_id"],
         type=safe["type"],
         tcode=safe["tcode"],
+        invoice_subtype=safe.get("invoice_subtype"),
         status=safe["status"],
         uploaded_by=safe["uploaded_by"],
         uploaded_at=safe["uploaded_at"],
@@ -286,6 +300,7 @@ async def get_document(
         sap_validation=safe.get("sap_validation"),
         grn_posting=safe.get("grn_posting"),
         miro_posting=safe.get("miro_posting"),
+        fb60_posting=safe.get("fb60_posting"),
         retry_count=safe.get("retry_count", 0),
         error_log=safe.get("error_log", []),
         created_at=safe["created_at"],
@@ -575,4 +590,42 @@ async def post_to_grn(
         document_id=document_id,
         status="gr_posting",
         message="GR posting started. MIRO will follow automatically.",
+    )
+
+
+@router.post(
+    "/{document_id}/post-fb60",
+    response_model=FB60TriggerResponse,
+    status_code=202,
+    summary="Post Non-PO invoice to SAP FB60",
+)
+async def post_fb60(
+    document_id: str,
+    form_data: dict,
+    current_user: CurrentUser,
+) -> FB60TriggerResponse:
+    db = get_database()
+    doc = await DocumentRepository(db).find_by_document_id(document_id)
+    if not doc:
+        raise NotFoundError(f"Document {document_id} not found")
+
+    current_status = DocumentStatus(doc.get("status", ""))
+    if current_status not in {DocumentStatus.EXTRACTED, DocumentStatus.FAILED}:
+        raise ValidationError(
+            f"Document must be in EXTRACTED status to post FB60 (current: {current_status})",
+            error_code="INVALID_STATUS_TRANSITION",
+        )
+
+    import asyncio as _asyncio
+    from src.workers.fb60_worker import run_fb60_direct
+    _asyncio.create_task(
+        run_fb60_direct(document_id, form_data, current_user.sub),
+        name=f"fb60-{document_id}",
+    )
+    log.info("FB60 task started", document_id=document_id)
+
+    return FB60TriggerResponse(
+        document_id=document_id,
+        status="posting",
+        message="FB60 posting started.",
     )

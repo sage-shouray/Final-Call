@@ -137,6 +137,60 @@ class GRNResponse(BaseModel):
         return str(raw) if raw else ""
 
 
+# ---------------------------------------------------------------------------
+# FB60 (Non-PO Invoice) payload shapes
+# ---------------------------------------------------------------------------
+
+
+class FB60InvoiceItem(BaseModel):
+    Invoice_Line_item_no: int
+    GL: str = ""
+    Amount: float  # negative for vendor credit line
+    Tax_Code: str = ""
+    Business_Place: str = ""
+    Value_Date: str = ""
+    Assignment_No: str = ""
+    Text: str = ""
+    Cost_Center: str = ""
+    Profit_Center: str = ""
+    Special_Gl: str = ""
+    Baseline_Date: str = ""
+    WHT_Tax: str = ""
+
+
+class FB60Data(BaseModel):
+    CounterItem_No: int = 1
+    Invoice_Doc_Date: str
+    Document_type: str = "KR"
+    Company_Code: str
+    Posting_Date: str
+    Currency: str = "INR"
+    Reference: str = ""
+    Header_Document_Text: str = ""
+    Vendor: str
+    Invoice_Items: list[FB60InvoiceItem]
+
+
+class FB60Payload(BaseModel):
+    data: list[FB60Data]
+
+
+class FB60Response(BaseModel):
+    fb60_number: str = ""
+    status: str = ""
+    message: str = ""
+    sap_response: dict[str, Any] = Field(default_factory=dict)
+    success: bool = False
+
+    @classmethod
+    def parse_message(cls, raw: Any) -> str:
+        if isinstance(raw, str):
+            return raw
+        if isinstance(raw, list):
+            return " | ".join(str(item.get("MSG", item.get("MESSAGE", item))) for item in raw if item)
+        return str(raw) if raw else ""
+
+
 class MIROResponse(BaseModel):
     miro_number: str = ""
     status: str = ""

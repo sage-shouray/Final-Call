@@ -4,15 +4,16 @@ import { DocumentType, TCode } from '@/types';
 import { cn } from '@/lib/cn';
 
 interface DocTypeOption {
-  type:      DocumentType;
-  label:     string;
-  tcode:     TCode;
-  icon:      React.ElementType;
-  active:    boolean;
+  type:        DocumentType;
+  label:       string;
+  tcode:       TCode;
+  tcodeLabel?: string;
+  icon:        React.ElementType;
+  active:      boolean;
 }
 
 const OPTIONS: DocTypeOption[] = [
-  { type: DocumentType.VENDOR_INVOICE,  label: 'Vendor Invoice',  tcode: TCode.MIRO, icon: FileText,  active: true  },
+  { type: DocumentType.VENDOR_INVOICE,  label: 'Vendor Invoice',  tcode: TCode.MIRO, icon: FileText,  active: true,  tcodeLabel: 'PO / Non-PO' },
   { type: DocumentType.BANK_STATEMENT,  label: 'Bank Statement',  tcode: TCode.FF67, icon: Landmark,  active: false },
   { type: DocumentType.PAYMENT_ADVICE,  label: 'Payment Advice',  tcode: TCode.F28,  icon: FileCheck, active: false },
   { type: DocumentType.GOODS_RECEIPT,   label: 'Goods Receipt',   tcode: TCode.MIGO, icon: Package,   active: true  },
@@ -69,7 +70,7 @@ export function DocTypePicker({ value, onChange }: DocTypePickerProps) {
               </div>
               <div>
                 <p className="text-xs font-semibold text-neutral-600">{opt.label}</p>
-                <p className="mt-0.5 font-mono text-[10px] text-neutral-400">{opt.tcode}</p>
+                <p className="mt-0.5 font-mono text-[10px] text-neutral-400">{opt.tcodeLabel ?? opt.tcode}</p>
               </div>
             </div>
           );
@@ -102,7 +103,7 @@ export function DocTypePicker({ value, onChange }: DocTypePickerProps) {
               <p className={cn('text-xs font-semibold', selected ? 'text-indigo-700' : 'text-neutral-700')}>
                 {opt.label}
               </p>
-              <p className="mt-0.5 font-mono text-[10px] text-neutral-400">{opt.tcode}</p>
+              <p className="mt-0.5 font-mono text-[10px] text-neutral-400">{opt.tcodeLabel ?? opt.tcode}</p>
             </div>
           </button>
         );

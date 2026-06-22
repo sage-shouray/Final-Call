@@ -11,9 +11,10 @@ import { DocTypePicker }   from '@/components/upload/DocTypePicker';
 import { FileDropzone }    from '@/components/upload/FileDropzone';
 import { Skeleton }        from '@/components/ui/Skeleton';
 import { ExtractedDataForm } from '@/components/upload/ExtractedDataForm';
+import { NonPOInvoiceForm }  from '@/components/upload/NonPOInvoiceForm';
 import { ValidationPanel, ValidationLoading } from '@/components/upload/ValidationPanel';
 import { SuccessPanel, PostingLoading }        from '@/components/upload/SuccessPanel';
-import { DocumentType, DocumentStatus, type ExtractedData } from '@/types';
+import { DocumentType, DocumentStatus, InvoiceSubtype, type ExtractedData, type FB60FormData } from '@/types';
 import type { Document } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -30,21 +31,23 @@ type WizardStep =
   | 'complete';
 
 interface WizardState {
-  step:         WizardStep;
-  documentId:   string | null;
-  document:     Document | null;
-  file:         File | null;
-  selectedType: DocumentType;
-  editedData:   ExtractedData | null;
+  step:            WizardStep;
+  documentId:      string | null;
+  document:        Document | null;
+  file:            File | null;
+  selectedType:    DocumentType;
+  invoiceSubtype:  InvoiceSubtype | null;
+  editedData:      ExtractedData | null;
 }
 
 const INITIAL: WizardState = {
-  step:         'upload',
-  documentId:   null,
-  document:     null,
-  file:         null,
-  selectedType: DocumentType.VENDOR_INVOICE,
-  editedData:   null,
+  step:           'upload',
+  documentId:     null,
+  document:       null,
+  file:           null,
+  selectedType:   DocumentType.VENDOR_INVOICE,
+  invoiceSubtype: null,
+  editedData:     null,
 };
 
 // ─── Step config ──────────────────────────────────────────────────────────────
@@ -60,8 +63,8 @@ const MIRO_STEPS = [
 const MIGO_STEPS = [
   { label: 'Upload' },
   { label: 'Extracting' },
-  { label: 'Post MIGO' },
-  { label: 'Post MIRO' },
+  { label: 'Post GR' },
+  { label: 'Post Invoice' },
   { label: 'Complete' },
 ];
 
@@ -240,6 +243,17 @@ export default function UploadPage() {
         } else if (s === DocumentStatus.POSTED && state.step === 'posting') {
           clearInterval(pollRef.current);
           setState((prev) => ({ ...prev, step: 'complete', document: doc }));
+        } else if (s === DocumentStatus.EXTRACTED && state.step === 'posting') {
+          // FB60 failed — worker reverted status back to EXTRACTED
+          clearInterval(pollRef.current);
+          const errMsg = doc.fb60_posting?.message || 'SAP rejected the posting. Fix the errors and retry.';
+          toast.error(errMsg, { duration: 8000 });
+          setState((prev) => ({ ...prev, step: 'extracted', document: doc }));
+        } else if (s === DocumentStatus.VALIDATED && state.step === 'posting') {
+          // MIRO failed — worker reverted status back to VALIDATED
+          clearInterval(pollRef.current);
+          toast.error('SAP posting failed. Please retry.');
+          setState((prev) => ({ ...prev, step: 'validated', document: doc }));
         } else if (s === DocumentStatus.FAILED) {
           clearInterval(pollRef.current);
           toast.error('Processing failed. Please try again.');
@@ -260,8 +274,8 @@ export default function UploadPage() {
 
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('tcode', 'MIRO');
     formData.append('document_type', state.selectedType);
+    if (state.invoiceSubtype) formData.append('invoice_subtype', state.invoiceSubtype);
 
     try {
       const resp = await api.post<{ document_id: string }>(
@@ -284,7 +298,7 @@ export default function UploadPage() {
       setProgress(0);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.selectedType]);
+  }, [state.selectedType, state.invoiceSubtype]);
 
   // ── Validate ────────────────────────────────────────────────────────────────
 
@@ -315,6 +329,19 @@ export default function UploadPage() {
     }
   }
 
+  // ── Post FB60 (Non-PO Invoice) ───────────────────────────────────────────────
+
+  async function handlePostFB60(formData: FB60FormData) {
+    if (!state.documentId) return;
+    setState((s) => ({ ...s, step: 'posting' }));
+    try {
+      await api.post(`/documents/${state.documentId}/post-fb60`, formData);
+    } catch {
+      toast.error('Failed to post to SAP FB60. Please retry.');
+      setState((s) => ({ ...s, step: 'extracted' }));
+    }
+  }
+
   // ── Post MIRO ───────────────────────────────────────────────────────────────
 
   async function handlePostMiro() {
@@ -339,9 +366,12 @@ export default function UploadPage() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
-  const isUploading = state.step === 'upload' && uploadProgress > 0 && uploadProgress < 100;
-  const doc         = state.document;
-  const isMigo      = state.selectedType === DocumentType.GOODS_RECEIPT;
+  const isUploading  = state.step === 'upload' && uploadProgress > 0 && uploadProgress < 100;
+  const doc          = state.document;
+  const isMigo       = state.selectedType === DocumentType.GOODS_RECEIPT;
+  const isVendorInv  = state.selectedType === DocumentType.VENDOR_INVOICE;
+  const isNonPO      = isVendorInv && state.invoiceSubtype === InvoiceSubtype.NON_PO;
+  const needsSubtype = isVendorInv && state.invoiceSubtype === null;
 
   return (
     <>
@@ -366,12 +396,44 @@ export default function UploadPage() {
               <h2 className="text-sm font-semibold text-neutral-800">Select Document Type</h2>
               <DocTypePicker
                 value={state.selectedType}
-                onChange={(type) => setState((s) => ({ ...s, selectedType: type }))}
+                onChange={(type) => setState((s) => ({ ...s, selectedType: type, invoiceSubtype: null }))}
               />
             </div>
 
-            <div className="rounded-xl border border-neutral-200 bg-white p-5 space-y-3">
+            {/* Invoice sub-type selector — only for Vendor Invoice */}
+            {isVendorInv && (
+              <div className="rounded-xl border border-neutral-200 bg-white p-5 space-y-3">
+                <h2 className="text-sm font-semibold text-neutral-800">Invoice Type</h2>
+                <div className="grid grid-cols-2 gap-3">
+                  {([
+                    { value: InvoiceSubtype.PO,     label: 'PO Invoice',     desc: 'Invoice linked to a Purchase Order' },
+                    { value: InvoiceSubtype.NON_PO,  label: 'Non-PO Invoice', desc: 'Direct GL posting — no Purchase Order required' },
+                  ] as const).map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setState(s => ({ ...s, invoiceSubtype: opt.value }))}
+                      className={`rounded-xl border-2 p-4 text-left transition-all ${
+                        state.invoiceSubtype === opt.value
+                          ? 'border-primary-500 bg-primary-50'
+                          : 'border-neutral-200 bg-white hover:border-neutral-300'
+                      }`}
+                    >
+                      <p className={`text-sm font-semibold ${state.invoiceSubtype === opt.value ? 'text-primary-700' : 'text-neutral-800'}`}>
+                        {opt.label}
+                      </p>
+                      <p className="mt-1 text-xs text-neutral-500">{opt.desc}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className={`rounded-xl border border-neutral-200 bg-white p-5 space-y-3 ${needsSubtype ? 'opacity-40 pointer-events-none' : ''}`}>
               <h2 className="text-sm font-semibold text-neutral-800">Upload File</h2>
+              {needsSubtype && (
+                <p className="text-xs text-amber-600">Please select an invoice type above first.</p>
+              )}
               <FileDropzone
                 file={state.file}
                 progress={uploadProgress}
@@ -392,8 +454,8 @@ export default function UploadPage() {
           />
         )}
 
-        {/* ── MIRO flow: Step 3 Review / Step 4 Validate ─────────────────── */}
-        {!isMigo && state.step === 'extracted' && state.editedData && (
+        {/* ── PO Invoice flow: Step 3 Review / Step 4 Validate ───────────── */}
+        {!isMigo && !isNonPO && state.step === 'extracted' && state.editedData && (
           <ExtractedDataForm
             data={state.editedData}
             onDataChange={(updated) => setState((s) => ({ ...s, editedData: updated }))}
@@ -401,17 +463,39 @@ export default function UploadPage() {
             isValidating={false}
           />
         )}
-        {!isMigo && state.step === 'validating' && (
+        {!isMigo && !isNonPO && state.step === 'validating' && (
           <div className="rounded-xl border border-neutral-200 bg-white p-8">
             <ValidationLoading />
           </div>
         )}
-        {!isMigo && state.step === 'validated' && doc?.sap_validation && (
+        {!isMigo && !isNonPO && state.step === 'validated' && doc?.sap_validation && (
           <ValidationPanel
             validation={doc.sap_validation}
             onPost={handlePostMiro}
             isPosting={false}
           />
+        )}
+
+        {/* ── Non-PO Invoice flow: Step 3 FB60 Form ──────────────────────── */}
+        {isNonPO && state.step === 'extracted' && (
+          <>
+            {doc?.fb60_posting?.status === 'failed' && doc.fb60_posting.message && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <p className="font-semibold mb-1">SAP rejected the previous posting:</p>
+                <ul className="list-disc list-inside space-y-0.5">
+                  {doc.fb60_posting.message.split(' | ').map((msg, i) => (
+                    <li key={i}>{msg}</li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-xs text-red-500">Correct the fields below and try again.</p>
+              </div>
+            )}
+            <NonPOInvoiceForm
+              extracted={state.editedData}
+              isPosting={false}
+              onPost={handlePostFB60}
+            />
+          </>
         )}
 
         {/* ── MIGO flow: Step 3 Post GR ──────────────────────────────────── */}
@@ -450,7 +534,7 @@ export default function UploadPage() {
                   </p>
                   <p className="text-xs text-teal-600">
                     {doc.grn_posting.already_done
-                      ? 'Quantities already received in SAP — you can proceed to MIRO'
+                      ? 'Quantities already received in SAP — you can proceed to post the invoice'
                       : String(doc.grn_posting.posted_at ?? '')}
                   </p>
                 </div>
@@ -486,14 +570,14 @@ export default function UploadPage() {
                 </div>
               )}
             </div>
-            {/* Post to MIRO button */}
+            {/* Post Invoice button */}
             <div className="flex justify-end">
               <button
                 type="button"
                 onClick={handlePostMiro}
                 className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 transition-colors"
               >
-                Post to MIRO
+                Post Invoice to SAP
               </button>
             </div>
           </div>
@@ -507,10 +591,11 @@ export default function UploadPage() {
         )}
 
         {/* ── Step 5b: Complete ──────────────────────────────────────────── */}
-        {state.step === 'complete' && doc?.miro_posting && (
+        {state.step === 'complete' && (doc?.miro_posting || doc?.fb60_posting) && (
           <div className="rounded-xl border border-neutral-200 bg-white p-6">
             <SuccessPanel
               miro={doc.miro_posting}
+              fb60={doc.fb60_posting}
               extracted={doc.extracted}
               onReset={reset}
             />

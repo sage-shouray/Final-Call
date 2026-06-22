@@ -30,6 +30,11 @@ export enum TCode {
   MIGO = 'MIGO',
 }
 
+export enum InvoiceSubtype {
+  PO     = 'po',
+  NON_PO = 'non_po',
+}
+
 export enum UserRole {
   ADMIN    = 'admin',
   MANAGER  = 'manager',
@@ -117,6 +122,43 @@ export interface GRNPosting {
   message:      string;
 }
 
+export interface FB60InvoiceItem {
+  line_no:        number;
+  gl:             string;
+  amount:         number;
+  tax_code:       string;
+  business_place: string;
+  value_date:     string;
+  assignment_no:  string;
+  text:           string;
+  cost_center:    string;
+  profit_center:  string;
+  special_gl:     string;
+  baseline_date:  string;
+  wht_tax:        string;
+}
+
+export interface FB60FormData {
+  invoice_doc_date: string;
+  document_type:    string;
+  company_code:     string;
+  posting_date:     string;
+  currency:         string;
+  reference:        string;
+  header_text:      string;
+  vendor:           string;
+  invoice_items:    FB60InvoiceItem[];
+}
+
+export interface FB60Posting {
+  posted_at:    string;
+  payload_sent: Record<string, unknown>;
+  fb60_number:  string;
+  sap_response: Record<string, unknown>;
+  status:       'success' | 'failed';
+  message:      string;
+}
+
 export interface MIROPosting {
   posted_at:    string;
   payload_sent: Record<string, unknown>;
@@ -140,11 +182,12 @@ export interface FileMetadata {
 }
 
 export interface Document {
-  id:             string;
-  document_id:    string;
-  type:           DocumentType;
-  tcode:          TCode;
-  status:         DocumentStatus;
+  id:               string;
+  document_id:      string;
+  type:             DocumentType;
+  tcode:            TCode;
+  invoice_subtype:  InvoiceSubtype | null;
+  status:           DocumentStatus;
   uploaded_by:    string;
   uploaded_at:    string;
   file:           FileMetadata;
@@ -152,6 +195,7 @@ export interface Document {
   sap_validation: SAPValidation | null;
   grn_posting:    GRNPosting | null;
   miro_posting:   MIROPosting | null;
+  fb60_posting:   FB60Posting | null;
   retry_count:    number;
   error_log:      ErrorEntry[];
   created_at:     string;
@@ -167,8 +211,10 @@ export interface DocumentListItem {
   uploaded_at:      string;
   vendor_name:      string;
   amount:           string;
+  invoice_subtype:  string;
   grn_number:       string;
   miro_number:      string;
+  fb60_number:      string;
   confidence_score?: number | undefined;
   uploaded_by?:     string | undefined;
 }

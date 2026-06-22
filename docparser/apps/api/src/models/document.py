@@ -42,7 +42,17 @@ class DocumentStatus(StrEnum):
     FAILED = "failed"
 
 
+class InvoiceSubtype(StrEnum):
+    PO = "po"
+    NON_PO = "non_po"
+
+
 class MIROStatus(StrEnum):
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+class FB60Status(StrEnum):
     SUCCESS = "success"
     FAILED = "failed"
 
@@ -169,6 +179,14 @@ class MIROPosting(TimestampedModel.__bases__[0]):
     status: MIROStatus = MIROStatus.FAILED
 
 
+class FB60Posting(TimestampedModel.__bases__[0]):
+    posted_at: datetime = Field(default_factory=_utcnow)
+    payload_sent: dict[str, Any] = Field(default_factory=dict)
+    fb60_number: str = ""
+    sap_response: dict[str, Any] = Field(default_factory=dict)
+    status: FB60Status = FB60Status.FAILED
+
+
 class ErrorEntry(TimestampedModel.__bases__[0]):
     timestamp: datetime = Field(default_factory=_utcnow)
     stage: str
@@ -187,6 +205,7 @@ class Document(TimestampedModel):
     document_id: str = Field(..., description="Human-readable ID e.g. DOC-2026-441200")
     type: DocumentType
     tcode: TCode
+    invoice_subtype: InvoiceSubtype | None = None  # "po" | "non_po" for vendor invoices
     status: DocumentStatus = DocumentStatus.UPLOADED
     uploaded_by: str
     uploaded_at: datetime = Field(default_factory=_utcnow)
@@ -195,5 +214,6 @@ class Document(TimestampedModel):
     sap_validation: SAPValidation | None = None
     grn_posting: GRNPosting | None = None
     miro_posting: MIROPosting | None = None
+    fb60_posting: FB60Posting | None = None
     retry_count: int = Field(default=0, ge=0)
     error_log: list[ErrorEntry] = Field(default_factory=list)
