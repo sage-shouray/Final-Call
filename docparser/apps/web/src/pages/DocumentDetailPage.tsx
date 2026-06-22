@@ -360,6 +360,11 @@ export default function DocumentDetailPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['document', id] }),
   });
 
+  const grnMutation = useMutation({
+    mutationFn: () => api.post(`/documents/${id}/post-grn`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['document', id] }),
+  });
+
   const { event } = useDocumentWebSocket(id);
   useEffect(() => {
     if (event) qc.invalidateQueries({ queryKey: ['document', id] });
@@ -413,8 +418,10 @@ export default function DocumentDetailPage() {
 
   const extracted  = doc.extracted;
   const validation = doc.sap_validation;
+  const grn        = doc.grn_posting;
   const miro       = doc.miro_posting;
   const status     = doc.status as DocumentStatus;
+  const isMigo     = doc.tcode === 'MIGO';
 
   return (
     <>
@@ -435,7 +442,7 @@ export default function DocumentDetailPage() {
             Retry OCR
           </button>
         )}
-        {status === DocumentStatus.EXTRACTED && (
+        {status === DocumentStatus.EXTRACTED && !isMigo && (
           <button
             type="button"
             onClick={() => validateMutation.mutate()}
@@ -448,7 +455,33 @@ export default function DocumentDetailPage() {
             Validate with SAP
           </button>
         )}
-        {status === DocumentStatus.VALIDATED && (
+        {isMigo && (status === DocumentStatus.EXTRACTED || status === DocumentStatus.VALIDATED) && (
+          <button
+            type="button"
+            onClick={() => grnMutation.mutate()}
+            disabled={grnMutation.isPending}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700 disabled:opacity-60 transition-colors"
+          >
+            {grnMutation.isPending
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <CheckCircle2 className="h-3.5 w-3.5" />}
+            Post to MIGO
+          </button>
+        )}
+        {!isMigo && status === DocumentStatus.VALIDATED && (
+          <button
+            type="button"
+            onClick={() => miroMutation.mutate()}
+            disabled={miroMutation.isPending}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-60 transition-colors"
+          >
+            {miroMutation.isPending
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <CheckCircle2 className="h-3.5 w-3.5" />}
+            Post to MIRO
+          </button>
+        )}
+        {status === DocumentStatus.GR_POSTED && (
           <button
             type="button"
             onClick={() => miroMutation.mutate()}
@@ -612,6 +645,113 @@ export default function DocumentDetailPage() {
               </Collapsible>
             )}
 
+            {/* GRN result — shown for MIGO documents */}
+            {isMigo && grn && (
+              <div className={cn(
+                'rounded-xl border overflow-hidden',
+                grn.status === 'success' ? 'border-teal-200' : 'border-red-200',
+              )}>
+                {/* Header */}
+                <div className={cn('flex items-center justify-between px-5 py-4', grn.status === 'success' ? 'bg-teal-50' : 'bg-red-50')}>
+                  <div className="flex items-center gap-3">
+                    <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', grn.status === 'success' ? 'bg-teal-100' : 'bg-red-100')}>
+                      <CheckCircle2 className={cn('h-4 w-4', grn.status === 'success' ? 'text-teal-600' : 'text-red-500')} />
+                    </div>
+                    <div>
+                      <p className={cn('text-sm font-semibold', grn.status === 'success' ? 'text-teal-900' : 'text-red-900')}>
+                        {grn.already_done
+                          ? 'MIGO Already Done — GR Previously Posted'
+                          : grn.status === 'success'
+                            ? 'Goods Receipt Posted Successfully'
+                            : 'GR Posting Failed'}
+                      </p>
+                      <p className={cn('text-xs', grn.status === 'success' ? 'text-teal-600' : 'text-red-500')}>
+                        {grn.already_done
+                          ? 'Quantities already received in SAP — you can proceed to MIRO'
+                          : String(grn.posted_at ?? '')}
+                      </p>
+                    </div>
+                  </div>
+                  {grn.grn_number && (
+                    <div className="text-right">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-teal-500">GRN Number</p>
+                      <p className="font-mono text-xl font-bold tracking-wide text-teal-900">{grn.grn_number}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Line items table — prefer SAP ITEM_DATA, fall back to payload po_items */}
+                {grn.status === 'success' && (() => {
+                  type SapItem = { PO_ITEM?: unknown; MATERIAL?: unknown; MAT_DES?: unknown; REV_QTY?: unknown; UNIT?: unknown };
+                  type PayloadItem = { po_item: string; material: string; quantity: string };
+                  const sapItems = Array.isArray((grn as unknown as Record<string, unknown>).item_data)
+                    ? ((grn as unknown as Record<string, unknown>).item_data as SapItem[])
+                    : null;
+                  const payloadItems = Array.isArray((grn.payload_sent as Record<string, unknown>)?.po_items)
+                    ? ((grn.payload_sent as Record<string, unknown>).po_items as PayloadItem[])
+                    : null;
+                  if (!sapItems && !payloadItems) return null;
+                  return (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-teal-100/60">
+                          <tr>
+                            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700">PO Item</th>
+                            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700">Material</th>
+                            {sapItems && <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700">Description</th>}
+                            <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-teal-700">Qty Received</th>
+                            {sapItems && <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700">UOM</th>}
+                            <th className="px-4 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-teal-700">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-teal-100 bg-white">
+                          {sapItems
+                            ? sapItems.map((item, idx) => (
+                              <tr key={idx} className="hover:bg-teal-50/40 transition-colors">
+                                <td className="px-4 py-3 font-mono text-xs text-neutral-700">{String(item.PO_ITEM ?? '')}</td>
+                                <td className="px-4 py-3 font-mono text-xs text-neutral-700">{String(item.MATERIAL ?? '')}</td>
+                                <td className="px-4 py-3 text-xs text-neutral-600">{String(item.MAT_DES ?? '')}</td>
+                                <td className="px-4 py-3 text-right font-medium text-neutral-800">{String(item.REV_QTY ?? '')}</td>
+                                <td className="px-4 py-3 text-xs text-neutral-500">{String(item.UNIT ?? '')}</td>
+                                <td className="px-4 py-3 text-center">
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-medium text-teal-700">
+                                    <CheckCircle2 className="h-3 w-3" /> Posted
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                            : payloadItems!.map((item, idx) => (
+                              <tr key={idx} className="hover:bg-teal-50/40 transition-colors">
+                                <td className="px-4 py-3 font-mono text-xs text-neutral-700">{item.po_item}</td>
+                                <td className="px-4 py-3 font-mono text-xs text-neutral-700">{item.material}</td>
+                                <td className="px-4 py-3 text-right font-medium text-neutral-800">{item.quantity}</td>
+                                <td className="px-4 py-3 text-center">
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-medium text-teal-700">
+                                    <CheckCircle2 className="h-3 w-3" /> Posted
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
+
+                {/* Error message */}
+                {grn.status !== 'success' && !!grn.sap_response?.MESSAGE && (
+                  <div className="px-5 py-3 bg-red-50">
+                    <p className="text-xs text-red-700 break-words">
+                      {Array.isArray(grn.sap_response.MESSAGE)
+                        ? (grn.sap_response.MESSAGE as { MSG?: string }[]).map((m) => m.MSG ?? '').join(' | ')
+                        : String(grn.sap_response.MESSAGE)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* MIRO result */}
             {miro && (
               <div className={cn(
@@ -645,13 +785,13 @@ export default function DocumentDetailPage() {
                 <Badge variant={miro.status === 'success' ? 'success' : 'error'} dot className="text-xs">
                   {miro.status === 'success' ? 'Success' : 'Failed'}
                 </Badge>
-                {miro.sap_response?.MESSAGE && (
+                {miro.sap_response?.MESSAGE ? (
                   <p className="mt-2 text-xs text-red-700 break-words">
                     {Array.isArray(miro.sap_response.MESSAGE)
-                      ? miro.sap_response.MESSAGE.map((m: { MSG?: string }) => m.MSG).join(' | ')
+                      ? (miro.sap_response.MESSAGE as { MSG?: string }[]).map((m) => m.MSG ?? '').join(' | ')
                       : String(miro.sap_response.MESSAGE)}
                   </p>
-                )}
+                ) : null}
               </div>
             )}
 

@@ -105,6 +105,38 @@ class MIROPayload(BaseModel):
     data: list[MIROData]
 
 
+class GRNItemData(BaseModel):
+    po_item: str
+    material: str
+    quantity: str
+
+
+class GRNPayload(BaseModel):
+    po: str
+    vendor: str
+    reference_doc_no: str
+    posting_date: str
+    document_date: str
+    po_items: list[GRNItemData]
+
+
+class GRNResponse(BaseModel):
+    grn_number: str = ""
+    status: str = ""
+    message: str = ""
+    sap_response: dict[str, Any] = Field(default_factory=dict)
+    success: bool = False
+    already_done: bool = False
+
+    @classmethod
+    def parse_message(cls, raw: Any) -> str:
+        if isinstance(raw, str):
+            return raw
+        if isinstance(raw, list):
+            return " | ".join(str(item.get("MSG", item)) for item in raw if item)
+        return str(raw) if raw else ""
+
+
 class MIROResponse(BaseModel):
     miro_number: str = ""
     status: str = ""

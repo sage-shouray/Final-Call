@@ -15,7 +15,7 @@ const OPTIONS: DocTypeOption[] = [
   { type: DocumentType.VENDOR_INVOICE,  label: 'Vendor Invoice',  tcode: TCode.MIRO, icon: FileText,  active: true  },
   { type: DocumentType.BANK_STATEMENT,  label: 'Bank Statement',  tcode: TCode.FF67, icon: Landmark,  active: false },
   { type: DocumentType.PAYMENT_ADVICE,  label: 'Payment Advice',  tcode: TCode.F28,  icon: FileCheck, active: false },
-  { type: DocumentType.GOODS_RECEIPT,   label: 'Goods Receipt',   tcode: TCode.MIGO, icon: Package,   active: false },
+  { type: DocumentType.GOODS_RECEIPT,   label: 'Goods Receipt',   tcode: TCode.MIGO, icon: Package,   active: true  },
   { type: DocumentType.FREIGHT_INVOICE, label: 'Freight Invoice', tcode: TCode.MIRO, icon: Truck,     active: false },
 ];
 

@@ -24,6 +24,8 @@ type WizardStep =
   | 'extracted'
   | 'validating'
   | 'validated'
+  | 'gr_posting'
+  | 'gr_posted'
   | 'posting'
   | 'complete';
 
@@ -47,7 +49,7 @@ const INITIAL: WizardState = {
 
 // ─── Step config ──────────────────────────────────────────────────────────────
 
-const WIZARD_STEPS = [
+const MIRO_STEPS = [
   { label: 'Upload' },
   { label: 'Extracting' },
   { label: 'Review' },
@@ -55,13 +57,37 @@ const WIZARD_STEPS = [
   { label: 'Complete' },
 ];
 
-function stepToIndex(step: WizardStep): number {
+const MIGO_STEPS = [
+  { label: 'Upload' },
+  { label: 'Extracting' },
+  { label: 'Post MIGO' },
+  { label: 'Post MIRO' },
+  { label: 'Complete' },
+];
+
+function stepToIndex(step: WizardStep, isMigo: boolean): number {
+  if (isMigo) {
+    const map: Record<WizardStep, number> = {
+      upload:     0,
+      extracting: 1,
+      extracted:  2,
+      gr_posting: 2,
+      gr_posted:  3,
+      validating: 3,
+      validated:  3,
+      posting:    4,
+      complete:   4,
+    };
+    return map[step];
+  }
   const map: Record<WizardStep, number> = {
     upload:     0,
     extracting: 1,
     extracted:  2,
     validating: 3,
     validated:  3,
+    gr_posting: 3,
+    gr_posted:  3,
     posting:    4,
     complete:   4,
   };
@@ -70,12 +96,14 @@ function stepToIndex(step: WizardStep): number {
 
 function stepToTabTitle(step: WizardStep): string {
   const labels: Record<WizardStep, string> = {
-    upload:     'Step 1/5 - Upload · DocParser',
-    extracting: 'Step 2/5 - Extracting · DocParser',
-    extracted:  'Step 3/5 - Review · DocParser',
-    validating: 'Step 4/5 - Validating · DocParser',
-    validated:  'Step 4/5 - Review Validation · DocParser',
-    posting:    'Step 5/5 - Posting · DocParser',
+    upload:     'Step 1 - Upload · DocParser',
+    extracting: 'Step 2 - Extracting · DocParser',
+    extracted:  'Step 3 - Review · DocParser',
+    gr_posting: 'Step 3 - Posting GR · DocParser',
+    gr_posted:  'Step 4 - GR Posted · DocParser',
+    validating: 'Step 4 - Validating · DocParser',
+    validated:  'Step 4 - Review Validation · DocParser',
+    posting:    'Step 5 - Posting · DocParser',
     complete:   'Complete · DocParser',
   };
   return labels[step];
@@ -186,9 +214,9 @@ export default function UploadPage() {
     }
   }
 
-  // Polling fallback (every 2 s for extracting, 3 s for validating/posting)
+  // Polling fallback
   useEffect(() => {
-    const active = ['extracting', 'validating', 'posting'];
+    const active = ['extracting', 'validating', 'gr_posting', 'posting'];
     if (!active.includes(state.step) || !state.documentId) {
       clearInterval(pollRef.current);
       return;
@@ -200,9 +228,12 @@ export default function UploadPage() {
         const resp = await api.get<Document>(`/documents/${state.documentId}`);
         const doc  = resp.data;
         const s    = doc.status as DocumentStatus;
-        if (s === DocumentStatus.EXTRACTED  && state.step === 'extracting') {
+        if (s === DocumentStatus.EXTRACTED && state.step === 'extracting') {
           clearInterval(pollRef.current);
           setState((prev) => ({ ...prev, step: 'extracted', document: doc, editedData: doc.extracted ?? null }));
+        } else if (s === DocumentStatus.GR_POSTED && state.step === 'gr_posting') {
+          clearInterval(pollRef.current);
+          setState((prev) => ({ ...prev, step: 'gr_posted', document: doc }));
         } else if (s === DocumentStatus.VALIDATED && state.step === 'validating') {
           clearInterval(pollRef.current);
           setState((prev) => ({ ...prev, step: 'validated', document: doc }));
@@ -271,6 +302,19 @@ export default function UploadPage() {
     }
   }
 
+  // ── Post GRN (MIGO) ─────────────────────────────────────────────────────────
+
+  async function handlePostGrn() {
+    if (!state.documentId) return;
+    setState((s) => ({ ...s, step: 'gr_posting' }));
+    try {
+      await api.post(`/documents/${state.documentId}/post-grn`);
+    } catch {
+      toast.error('Failed to trigger GR posting. Please retry.');
+      setState((s) => ({ ...s, step: 'extracted' }));
+    }
+  }
+
   // ── Post MIRO ───────────────────────────────────────────────────────────────
 
   async function handlePostMiro() {
@@ -280,7 +324,7 @@ export default function UploadPage() {
       await api.post(`/documents/${state.documentId}/post-miro`);
     } catch {
       toast.error('Failed to trigger MIRO posting. Retrying…');
-      setState((s) => ({ ...s, step: 'validated' }));
+      setState((s) => ({ ...s, step: isMigo ? 'gr_posted' : 'validated' }));
     }
   }
 
@@ -297,6 +341,7 @@ export default function UploadPage() {
 
   const isUploading = state.step === 'upload' && uploadProgress > 0 && uploadProgress < 100;
   const doc         = state.document;
+  const isMigo      = state.selectedType === DocumentType.GOODS_RECEIPT;
 
   return (
     <>
@@ -312,7 +357,7 @@ export default function UploadPage() {
       <div className="mx-auto max-w-3xl space-y-6 p-6">
 
         {/* Step indicator */}
-        <StepIndicator steps={WIZARD_STEPS} currentStep={stepToIndex(state.step)} />
+        <StepIndicator steps={isMigo ? MIGO_STEPS : MIRO_STEPS} currentStep={stepToIndex(state.step, isMigo)} />
 
         {/* ── Step 1: Upload ─────────────────────────────────────────────── */}
         {state.step === 'upload' && (
@@ -347,8 +392,8 @@ export default function UploadPage() {
           />
         )}
 
-        {/* ── Step 3: Review extracted data ──────────────────────────────── */}
-        {state.step === 'extracted' && state.editedData && (
+        {/* ── MIRO flow: Step 3 Review / Step 4 Validate ─────────────────── */}
+        {!isMigo && state.step === 'extracted' && state.editedData && (
           <ExtractedDataForm
             data={state.editedData}
             onDataChange={(updated) => setState((s) => ({ ...s, editedData: updated }))}
@@ -356,21 +401,102 @@ export default function UploadPage() {
             isValidating={false}
           />
         )}
-
-        {/* ── Step 4a: Validating loading ────────────────────────────────── */}
-        {state.step === 'validating' && (
+        {!isMigo && state.step === 'validating' && (
           <div className="rounded-xl border border-neutral-200 bg-white p-8">
             <ValidationLoading />
           </div>
         )}
-
-        {/* ── Step 4b: Validation results ────────────────────────────────── */}
-        {state.step === 'validated' && doc?.sap_validation && (
+        {!isMigo && state.step === 'validated' && doc?.sap_validation && (
           <ValidationPanel
             validation={doc.sap_validation}
             onPost={handlePostMiro}
             isPosting={false}
           />
+        )}
+
+        {/* ── MIGO flow: Step 3 Post GR ──────────────────────────────────── */}
+        {isMigo && state.step === 'extracted' && state.editedData && (
+          <div className="rounded-xl border border-neutral-200 bg-white p-6 space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-neutral-800">Extracted Data Ready</h2>
+              <p className="mt-1 text-xs text-neutral-500">Review the extracted fields below, then post the Goods Receipt to SAP.</p>
+            </div>
+            <ExtractedDataForm
+              data={state.editedData}
+              onDataChange={(updated) => setState((s) => ({ ...s, editedData: updated }))}
+              onValidate={handlePostGrn}
+              isValidating={false}
+              validateLabel="Post to MIGO"
+            />
+          </div>
+        )}
+        {isMigo && state.step === 'gr_posting' && (
+          <div className="rounded-xl border border-teal-200 bg-teal-50 p-8 flex flex-col items-center gap-3">
+            <div className="h-8 w-8 rounded-full border-2 border-teal-400 border-t-transparent animate-spin" />
+            <p className="text-sm font-medium text-teal-800">Posting Goods Receipt to SAP…</p>
+            <p className="text-xs text-teal-600">This may take up to 60 seconds</p>
+          </div>
+        )}
+        {isMigo && state.step === 'gr_posted' && doc?.grn_posting && (
+          <div className="space-y-4">
+            {/* GRN result table */}
+            <div className="rounded-xl border border-teal-200 overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 bg-teal-50">
+                <div>
+                  <p className="text-sm font-semibold text-teal-900">
+                    {doc.grn_posting.already_done
+                      ? 'MIGO Already Done — GR Previously Posted'
+                      : 'Goods Receipt Posted Successfully'}
+                  </p>
+                  <p className="text-xs text-teal-600">
+                    {doc.grn_posting.already_done
+                      ? 'Quantities already received in SAP — you can proceed to MIRO'
+                      : String(doc.grn_posting.posted_at ?? '')}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-teal-500">GRN Number</p>
+                  <p className="font-mono text-xl font-bold text-teal-900">{doc.grn_posting.grn_number}</p>
+                </div>
+              </div>
+              {Array.isArray((doc.grn_posting.payload_sent as Record<string, unknown>)?.po_items) && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-teal-100/60">
+                      <tr>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700">PO Item</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700">Material</th>
+                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-teal-700">Quantity</th>
+                        <th className="px-4 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-teal-700">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-teal-100 bg-white">
+                      {((doc.grn_posting.payload_sent as Record<string, unknown>).po_items as { po_item: string; material: string; quantity: string }[]).map((item, idx) => (
+                        <tr key={idx}>
+                          <td className="px-4 py-3 font-mono text-xs text-neutral-700">{item.po_item}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-neutral-700">{item.material}</td>
+                          <td className="px-4 py-3 text-right font-medium text-neutral-800">{item.quantity}</td>
+                          <td className="px-4 py-3 text-center">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-medium text-teal-700">Posted</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            {/* Post to MIRO button */}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handlePostMiro}
+                className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 transition-colors"
+              >
+                Post to MIRO
+              </button>
+            </div>
+          </div>
         )}
 
         {/* ── Step 5a: Posting loading ───────────────────────────────────── */}

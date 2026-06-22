@@ -142,7 +142,7 @@ export function Sidebar() {
         { label: 'Vendor Invoice',   to: '/upload?type=vendor_invoice',   icon: FileText },
         { label: 'Bank Statement',   to: '/upload?type=bank_statement',   icon: Landmark,     comingSoon: true },
         { label: 'Payment Advice',   to: '/upload?type=payment_advice',   icon: FileCheck,    comingSoon: true },
-        { label: 'Goods Receipt',    to: '/upload?type=goods_receipt',    icon: Package,      comingSoon: true },
+        { label: 'Goods Receipt',    to: '/upload?type=goods_receipt',    icon: Package,      comingSoon: false },
         { label: 'Freight Invoice',  to: '/upload?type=freight_invoice',  icon: Truck,        comingSoon: true },
       ],
     },

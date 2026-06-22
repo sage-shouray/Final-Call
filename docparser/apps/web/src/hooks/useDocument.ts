@@ -13,7 +13,7 @@ export function useDocument(documentId: string | undefined) {
     refetchInterval:   (query) => {
       const status = query.state.data?.status;
       // Poll every 3 s while a processing step is in progress
-      const active = ['extracting', 'validating', 'posting'];
+      const active = ['extracting', 'validating', 'gr_posting', 'posting'];
       return status && active.includes(status) ? 3_000 : false;
     },
   });

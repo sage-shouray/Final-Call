@@ -76,13 +76,15 @@ function MetricCard({ label, value, rawValue, footer, accent, alert }: MetricCar
 
 function statusBorderCls(status: DocumentStatus | string): string {
   switch (status) {
-    case DocumentStatus.POSTED:     return 'border-l-green-400';
-    case DocumentStatus.VALIDATED:  return 'border-l-indigo-400';
-    case DocumentStatus.EXTRACTED:  return 'border-l-indigo-300';
-    case DocumentStatus.EXTRACTING: return 'border-l-indigo-300';
-    case DocumentStatus.VALIDATING: return 'border-l-amber-400';
-    case DocumentStatus.POSTING:    return 'border-l-amber-400';
-    case DocumentStatus.FAILED:     return 'border-l-red-400';
+    case DocumentStatus.POSTED:      return 'border-l-green-400';
+    case DocumentStatus.VALIDATED:   return 'border-l-indigo-400';
+    case DocumentStatus.EXTRACTED:   return 'border-l-indigo-300';
+    case DocumentStatus.EXTRACTING:  return 'border-l-indigo-300';
+    case DocumentStatus.VALIDATING:  return 'border-l-amber-400';
+    case DocumentStatus.GR_POSTING:  return 'border-l-amber-400';
+    case DocumentStatus.GR_POSTED:   return 'border-l-teal-400';
+    case DocumentStatus.POSTING:     return 'border-l-amber-400';
+    case DocumentStatus.FAILED:      return 'border-l-red-400';
     default:                        return 'border-l-neutral-200';
   }
 }
@@ -274,7 +276,7 @@ export default function DashboardPage() {
                   <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Document</th>
                   <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400">T-Code</th>
                   <th className="px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Amount</th>
-                  <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400">MIRO No.</th>
+                  <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400">GRN / MIRO No.</th>
                   <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Status</th>
                   <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Date</th>
                 </tr>
@@ -329,10 +331,17 @@ export default function DashboardPage() {
                             </span>
                           </td>
                           <td className="px-3 py-3.5">
-                            {doc.miro_number
-                              ? <span className="font-mono text-xs font-semibold text-green-700">{doc.miro_number}</span>
-                              : <span className="text-xs text-neutral-300">—</span>
-                            }
+                            <div className="flex flex-col gap-0.5">
+                              {doc.grn_number && (
+                                <span className="font-mono text-xs font-semibold text-teal-700">GRN: {doc.grn_number}</span>
+                              )}
+                              {doc.miro_number && (
+                                <span className="font-mono text-xs font-semibold text-green-700">MIRO: {doc.miro_number}</span>
+                              )}
+                              {!doc.grn_number && !doc.miro_number && (
+                                <span className="text-xs text-neutral-300">—</span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-3 py-3.5">
                             <StatusPill status={doc.status as DocumentStatus} />
@@ -409,7 +418,7 @@ export default function DashboardPage() {
             <QuickAction label="Vendor Invoice"  tcode="MIRO" icon={FileText}  active uploadType="vendor_invoice" />
             <QuickAction label="Bank Statement"  tcode="FF67" icon={Landmark}  active={false} />
             <QuickAction label="Payment Advice"  tcode="F-28" icon={FileCheck} active={false} />
-            <QuickAction label="Goods Receipt"   tcode="MIGO" icon={Package}   active={false} />
+            <QuickAction label="Goods Receipt"   tcode="MIGO" icon={Package}   active uploadType="goods_receipt" />
             <QuickAction label="Freight Invoice" tcode="MIRO" icon={Truck}     active={false} />
           </div>
         </div>

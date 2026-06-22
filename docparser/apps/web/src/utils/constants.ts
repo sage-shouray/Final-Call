@@ -17,7 +17,7 @@ export const DOC_TYPE_CONFIG: Record<DocumentType, DocTypeConfig> = {
   [DocumentType.VENDOR_INVOICE]:  { label: 'Vendor Invoice',  tcode: TCode.MIRO, icon: FileText,  active: true  },
   [DocumentType.BANK_STATEMENT]:  { label: 'Bank Statement',  tcode: TCode.FF67, icon: Landmark,  active: false },
   [DocumentType.PAYMENT_ADVICE]:  { label: 'Payment Advice',  tcode: TCode.F28,  icon: FileCheck, active: false },
-  [DocumentType.GOODS_RECEIPT]:   { label: 'Goods Receipt',   tcode: TCode.MIGO, icon: Package,   active: false },
+  [DocumentType.GOODS_RECEIPT]:   { label: 'Goods Receipt',   tcode: TCode.MIGO, icon: Package,   active: true  },
   [DocumentType.FREIGHT_INVOICE]: { label: 'Freight Invoice', tcode: TCode.MIRO, icon: Truck,     active: false },
 };
 
@@ -38,9 +38,11 @@ export const STATUS_CONFIG: Record<DocumentStatus, StatusConfig> = {
   [DocumentStatus.EXTRACTING]: { label: 'Extracting', badgeColor: 'info',     step: 2 },
   [DocumentStatus.EXTRACTED]:  { label: 'Extracted',  badgeColor: 'info',     step: 3 },
   [DocumentStatus.VALIDATING]: { label: 'Validating', badgeColor: 'warning',  step: 4 },
-  [DocumentStatus.VALIDATED]:  { label: 'Validated',  badgeColor: 'success',  step: 5 },
-  [DocumentStatus.POSTING]:    { label: 'Posting',    badgeColor: 'warning',  step: 6 },
-  [DocumentStatus.POSTED]:     { label: 'Posted',     badgeColor: 'success',  step: 7 },
+  [DocumentStatus.VALIDATED]:  { label: 'Validated',   badgeColor: 'success',  step: 5 },
+  [DocumentStatus.GR_POSTING]: { label: 'GR Posting',  badgeColor: 'warning',  step: 6 },
+  [DocumentStatus.GR_POSTED]:  { label: 'GR Posted',   badgeColor: 'success',  step: 7 },
+  [DocumentStatus.POSTING]:    { label: 'Posting',     badgeColor: 'warning',  step: 8 },
+  [DocumentStatus.POSTED]:     { label: 'Posted',      badgeColor: 'success',  step: 9 },
   [DocumentStatus.FAILED]:     { label: 'Failed',     badgeColor: 'error',    step: 0 },
 };
 

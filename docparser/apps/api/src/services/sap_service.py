@@ -27,7 +27,7 @@ from tenacity import (
 
 from src.config import settings
 from src.exceptions import SAPCircuitOpenError, SAPConnectionError
-from src.schemas.sap import MIROPayload, MIROResponse, SAPPOResponse
+from src.schemas.sap import GRNPayload, GRNResponse, MIROPayload, MIROResponse, SAPPOResponse
 
 log = structlog.get_logger(__name__)
 
@@ -264,6 +264,46 @@ class SAPService:
         url = self._sap_url("ZMIRO/MIRO")
         return await self._http_post(url, payload)
 
+    async def _post_grn_raw(self, payload: dict[str, Any]) -> Any:
+        """Single GRN POST — no retry to prevent duplicate GR creation in SAP.
+
+        SAP returns HTTP 500 with a JSON list of messages when MIGO is already done.
+        We parse and return that body instead of raising, so the caller can detect it.
+        """
+        import httpx
+        url = self._sap_url("ZMIGO/GRN")
+        cleaned = SAPService._clean_numbers(payload)
+        timeout_secs = settings.SAP_TIMEOUT_SECONDS
+        auth = (
+            (settings.SAP_USERNAME, settings.SAP_PASSWORD.get_secret_value())
+            if settings.SAP_USERNAME
+            else None
+        )
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=30.0, read=float(timeout_secs), write=30.0, pool=30.0),
+            auth=auth,
+        ) as client:
+            resp = await client.post(
+                url,
+                json=cleaned,
+                headers={"Content-Type": "application/json", "Accept": "application/json"},
+            )
+            log.info(
+                "SAP POST request",
+                url=url,
+                status_code=resp.status_code,
+                duration_ms=0,
+                response_body=resp.text,
+            )
+            # SAP sends 500 + a message list when MIGO is already done — return the body as-is
+            if resp.status_code == 500:
+                try:
+                    return resp.json()
+                except Exception:
+                    raise SAPConnectionError(f"SAP returned HTTP 500", status_code=502)
+            resp.raise_for_status()
+            return resp.json()
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -320,6 +360,19 @@ class SAPService:
             PO_LINE_ITEMS=line_items,
             raw_response=raw,
         )
+
+    async def post_grn(self, payload: GRNPayload) -> GRNResponse:
+        """Post the GRN payload to SAP MIGO."""
+        from src.services.grn_service import parse_grn_response
+        log.info("posting GRN to SAP")
+        raw_payload = payload.model_dump()
+        raw_result = await self._post_grn_raw(raw_payload)
+        # SAP may return a list of message dicts when quantities are exceeded (MIGO already done)
+        if isinstance(raw_result, list):
+            raw: dict[str, Any] = {"MESSAGE_LIST": raw_result, "raw_list": raw_result}
+        else:
+            raw = raw_result
+        return parse_grn_response(raw)
 
     async def post_miro(self, payload: MIROPayload) -> MIROResponse:
         """Post the MIRO invoice payload to SAP."""

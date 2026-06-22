@@ -16,6 +16,7 @@ class DocumentListItem(BaseModel):
     uploaded_at: str
     vendor_name: str = ""
     amount: str = ""
+    grn_number: str = ""
     miro_number: str = ""
 
 
@@ -62,6 +63,12 @@ class MIROTriggerResponse(BaseModel):
     message: str
 
 
+class GRNTriggerResponse(BaseModel):
+    document_id: str
+    status: str
+    message: str
+
+
 class DocumentResponse(BaseModel):
     """Serialised document returned to the frontend.
 
@@ -80,6 +87,7 @@ class DocumentResponse(BaseModel):
     file: dict[str, Any]
     extracted: dict[str, Any] | None = None
     sap_validation: dict[str, Any] | None = None
+    grn_posting: dict[str, Any] | None = None
     miro_posting: dict[str, Any] | None = None
     retry_count: int
     error_log: list[dict[str, Any]]

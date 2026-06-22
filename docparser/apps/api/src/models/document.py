@@ -35,6 +35,8 @@ class DocumentStatus(StrEnum):
     EXTRACTED = "extracted"
     VALIDATING = "validating"
     VALIDATED = "validated"
+    GR_POSTING = "gr_posting"
+    GR_POSTED = "gr_posted"
     POSTING = "posting"
     POSTED = "posted"
     FAILED = "failed"
@@ -43,6 +45,12 @@ class DocumentStatus(StrEnum):
 class MIROStatus(StrEnum):
     SUCCESS = "success"
     FAILED = "failed"
+
+
+class GRNStatus(StrEnum):
+    SUCCESS = "success"
+    FAILED = "failed"
+    PENDING = "pending"
 
 
 # Automatic tcode assignment per document type
@@ -145,6 +153,14 @@ class SAPValidation(TimestampedModel.__bases__[0]):
     gr_status: list[GRStatusEntry] = Field(default_factory=list)
 
 
+class GRNPosting(TimestampedModel.__bases__[0]):
+    posted_at: datetime = Field(default_factory=_utcnow)
+    payload_sent: dict[str, Any] = Field(default_factory=dict)
+    grn_number: str = ""
+    sap_response: dict[str, Any] = Field(default_factory=dict)
+    status: GRNStatus = GRNStatus.PENDING
+
+
 class MIROPosting(TimestampedModel.__bases__[0]):
     posted_at: datetime = Field(default_factory=_utcnow)
     payload_sent: dict[str, Any] = Field(default_factory=dict)
@@ -177,6 +193,7 @@ class Document(TimestampedModel):
     file: FileMetadata
     extracted: ExtractedData | None = None
     sap_validation: SAPValidation | None = None
+    grn_posting: GRNPosting | None = None
     miro_posting: MIROPosting | None = None
     retry_count: int = Field(default=0, ge=0)
     error_log: list[ErrorEntry] = Field(default_factory=list)

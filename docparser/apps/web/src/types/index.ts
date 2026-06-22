@@ -8,6 +8,8 @@ export enum DocumentStatus {
   EXTRACTED  = 'extracted',
   VALIDATING = 'validating',
   VALIDATED  = 'validated',
+  GR_POSTING = 'gr_posting',
+  GR_POSTED  = 'gr_posted',
   POSTING    = 'posting',
   POSTED     = 'posted',
   FAILED     = 'failed',
@@ -105,6 +107,16 @@ export interface SAPValidation {
   recommendation:      string;
 }
 
+export interface GRNPosting {
+  posted_at:    string;
+  payload_sent: Record<string, unknown>;
+  grn_number:   string;
+  sap_response: Record<string, unknown>;
+  status:       'success' | 'failed' | 'pending';
+  already_done: boolean;
+  message:      string;
+}
+
 export interface MIROPosting {
   posted_at:    string;
   payload_sent: Record<string, unknown>;
@@ -138,6 +150,7 @@ export interface Document {
   file:           FileMetadata;
   extracted:      ExtractedData | null;
   sap_validation: SAPValidation | null;
+  grn_posting:    GRNPosting | null;
   miro_posting:   MIROPosting | null;
   retry_count:    number;
   error_log:      ErrorEntry[];
@@ -154,6 +167,7 @@ export interface DocumentListItem {
   uploaded_at:      string;
   vendor_name:      string;
   amount:           string;
+  grn_number:       string;
   miro_number:      string;
   confidence_score?: number | undefined;
   uploaded_by?:     string | undefined;

@@ -119,14 +119,15 @@ function LineItemsTable({ items }: { items: LineItem[] }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 interface ExtractedDataFormProps {
-  data:        ExtractedData;
-  onDataChange: (updated: ExtractedData) => void;
-  onValidate:  () => void;
-  isValidating: boolean;
+  data:           ExtractedData;
+  onDataChange:   (updated: ExtractedData) => void;
+  onValidate:     () => void;
+  isValidating:   boolean;
+  validateLabel?: string;
 }
 
 export function ExtractedDataForm({
-  data, onDataChange, onValidate, isValidating,
+  data, onDataChange, onValidate, isValidating, validateLabel = 'Validate with SAP',
 }: ExtractedDataFormProps) {
   function set<K extends keyof ExtractedData>(key: K, val: ExtractedData[K]) {
     onDataChange({ ...data, [key]: val });
@@ -194,7 +195,7 @@ export function ExtractedDataForm({
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
               Validating…
             </>
-          ) : 'Validate with SAP'}
+          ) : validateLabel}
         </button>
       </div>
     </div>

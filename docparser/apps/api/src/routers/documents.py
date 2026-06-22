@@ -25,6 +25,7 @@ from src.schemas.documents import (
     DocumentListResponse,
     DocumentResponse,
     DocumentUploadResponse,
+    GRNTriggerResponse,
     MIROTriggerResponse,
     PresignedUrlResponse,
     ValidationResultResponse,
@@ -228,6 +229,7 @@ async def list_documents(
     for doc in docs:
         safe = serialize_doc(doc)
         extracted = safe.get("extracted") or {}
+        grn = safe.get("grn_posting") or {}
         miro = safe.get("miro_posting") or {}
         items.append(
             DocumentListItem(
@@ -239,6 +241,7 @@ async def list_documents(
                 uploaded_at=safe["uploaded_at"],
                 vendor_name=extracted.get("vendor_name") or "",
                 amount=str(extracted.get("gross_amount") or ""),
+                grn_number=grn.get("grn_number") or "",
                 miro_number=miro.get("miro_number") or "",
             )
         )
@@ -281,6 +284,7 @@ async def get_document(
         file=safe["file"],
         extracted=safe.get("extracted"),
         sap_validation=safe.get("sap_validation"),
+        grn_posting=safe.get("grn_posting"),
         miro_posting=safe.get("miro_posting"),
         retry_count=safe.get("retry_count", 0),
         error_log=safe.get("error_log", []),
@@ -481,9 +485,9 @@ async def post_to_miro(
             "MIRO posting is already in progress for this document",
             error_code="ALREADY_POSTING",
         )
-    if current_status != DocumentStatus.VALIDATED:
+    if current_status not in {DocumentStatus.VALIDATED, DocumentStatus.GR_POSTED}:
         raise ValidationError(
-            f"Document must be in VALIDATED status before MIRO posting (current: {current_status})",
+            f"Document must be in VALIDATED or GR_POSTED status before MIRO posting (current: {current_status})",
             error_code="INVALID_STATUS_TRANSITION",
         )
 
@@ -519,4 +523,56 @@ async def post_to_miro(
         document_id=document_id,
         status="posting",
         message="MIRO posting started in the background.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/documents/{document_id}/post-grn
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{document_id}/post-grn",
+    response_model=GRNTriggerResponse,
+    status_code=202,
+    summary="Post GR to SAP MIGO then MIRO (manager/admin only)",
+)
+async def post_to_grn(
+    document_id: str,
+    current_user: CurrentUser,
+    _role: Annotated[Any, require_role("manager", "admin")] = None,
+) -> GRNTriggerResponse:
+    db = get_database()
+    doc = await DocumentRepository(db).find_by_document_id(document_id)
+    if not doc:
+        raise NotFoundError(f"Document '{document_id}' not found", error_code="DOCUMENT_NOT_FOUND")
+
+    current_status = doc.get("status", "")
+    if current_status == DocumentStatus.GR_POSTING:
+        raise ValidationError(
+            "GR posting is already in progress for this document",
+            error_code="ALREADY_POSTING",
+        )
+    if current_status not in {DocumentStatus.EXTRACTED, DocumentStatus.VALIDATED, DocumentStatus.GR_POSTED}:
+        raise ValidationError(
+            f"Document must be in EXTRACTED, VALIDATED or GR_POSTED status (current: {current_status})",
+            error_code="INVALID_STATUS_TRANSITION",
+        )
+
+    # Atomically set status to GR_POSTING
+    db2 = get_database()
+    await DocumentRepository(db2).update_status(str(doc["_id"]), DocumentStatus.GR_POSTING)
+
+    import asyncio as _asyncio
+    from src.workers.migo_worker import run_migo_direct
+    _asyncio.create_task(
+        run_migo_direct(document_id, current_user.sub),
+        name=f"migo-{document_id}",
+    )
+    log.info("MIGO task started", document_id=document_id)
+
+    return GRNTriggerResponse(
+        document_id=document_id,
+        status="gr_posting",
+        message="GR posting started. MIRO will follow automatically.",
     )
