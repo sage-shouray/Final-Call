@@ -7,7 +7,7 @@ import { cn } from '@/lib/cn';
 
 // ─── Posting loading state ─────────────────────────────────────────────────────
 
-export function PostingLoading({ lineItemCount }: { lineItemCount: number }) {
+export function PostingLoading({ lineItemCount, target = 'MIRO' }: { lineItemCount: number; target?: string }) {
   return (
     <div className="flex flex-col items-center gap-6 py-14">
       <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
@@ -16,7 +16,7 @@ export function PostingLoading({ lineItemCount }: { lineItemCount: number }) {
       </div>
       <div className="text-center">
         <p className="text-base font-semibold text-neutral-800">
-          Posting {lineItemCount} line item{lineItemCount !== 1 ? 's' : ''} to MIRO
+          Posting {lineItemCount} line item{lineItemCount !== 1 ? 's' : ''} to {target}
         </p>
         <p className="mt-1 text-sm text-neutral-400">This usually takes a few seconds…</p>
       </div>

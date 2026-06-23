@@ -108,10 +108,17 @@ async def upload_document(
         except ValueError:
             pass
 
+    from src.models.document import TCode as _TCode
+    tcode = (
+        _TCode.FB60
+        if parsed_subtype == InvoiceSubtype.NON_PO
+        else TCODE_MAP[doc_type]
+    )
+
     doc = Document(
         document_id=document_id,
         type=doc_type,
-        tcode=TCODE_MAP[doc_type],
+        tcode=tcode,
         invoice_subtype=parsed_subtype,
         status=DocumentStatus.UPLOADED,
         uploaded_by=current_user.sub,

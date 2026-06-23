@@ -586,7 +586,10 @@ export default function UploadPage() {
         {/* ── Step 5a: Posting loading ───────────────────────────────────── */}
         {state.step === 'posting' && (
           <div className="rounded-xl border border-neutral-200 bg-white p-8">
-            <PostingLoading lineItemCount={state.editedData?.line_items?.length ?? 0} />
+            <PostingLoading
+              lineItemCount={state.editedData?.line_items?.length ?? 0}
+              target={isNonPO ? 'FB60' : isMigo ? 'MIRO (via MIGO)' : 'MIRO'}
+            />
           </div>
         )}
 

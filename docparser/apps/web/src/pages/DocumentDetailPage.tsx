@@ -81,67 +81,136 @@ interface TimelineStep {
 }
 
 function getTimeline(doc: Document): TimelineStep[] {
-  const status = doc.status as DocumentStatus;
+  const status   = doc.status as DocumentStatus;
   const isFailed = status === DocumentStatus.FAILED;
+  const isMigo   = doc.tcode === 'MIGO' || doc.type === 'goods_receipt';
+  const isNonPO  = doc.tcode === 'FB60' || doc.invoice_subtype === 'non_po' || !!doc.fb60_posting;
 
-  const ORDER: DocumentStatus[] = [
-    DocumentStatus.UPLOADED,
-    DocumentStatus.EXTRACTED,
-    DocumentStatus.VALIDATED,
-    DocumentStatus.POSTED,
-  ];
-  const currentIdx = ORDER.indexOf(
-    isFailed ? DocumentStatus.UPLOADED : status as DocumentStatus,
-  );
+  const step0: TimelineStep = {
+    key:         'uploaded',
+    label:       'Document Uploaded',
+    description: doc.file?.original_name ?? 'File received',
+    timestamp:   doc.uploaded_at,
+    done:        true,
+    active:      false,
+    failed:      false,
+  };
 
+  const step1: TimelineStep = {
+    key:         'extracted',
+    label:       'OCR Extraction',
+    description: doc.extracted
+      ? `${doc.extracted.line_items?.length ?? 0} line item${doc.extracted.line_items?.length === 1 ? '' : 's'} extracted`
+      : status === DocumentStatus.EXTRACTING
+        ? 'Processing with Gemini AI…'
+        : 'Pending',
+    timestamp:   doc.extracted ? doc.updated_at : null,
+    done:        !!doc.extracted,
+    active:      status === DocumentStatus.EXTRACTING,
+    failed:      isFailed && !doc.extracted,
+  };
+
+  // ── Non-PO (FB60) flow ────────────────────────────────────────────────────
+  if (isNonPO) {
+    const fb60 = doc.fb60_posting as { fb60_number?: string; posted_at?: string; status?: string } | null;
+    return [
+      step0,
+      step1,
+      {
+        key:         'reviewed',
+        label:       'Fields Reviewed',
+        description: doc.extracted
+          ? 'Invoice fields filled and verified'
+          : 'Pending extraction',
+        timestamp:   doc.extracted ? doc.updated_at : null,
+        done:        !!doc.extracted,
+        active:      false,
+        failed:      false,
+      },
+      {
+        key:         'posted',
+        label:       'FB60 Posted to SAP',
+        description: fb60?.status === 'success'
+          ? `FB60 No: ${fb60.fb60_number}`
+          : status === DocumentStatus.POSTING
+            ? 'Posting Non-PO invoice to SAP…'
+            : fb60?.status === 'failed'
+              ? 'Posting failed — please retry'
+              : 'Pending',
+        timestamp:   fb60?.posted_at ?? null,
+        done:        fb60?.status === 'success',
+        active:      status === DocumentStatus.POSTING,
+        failed:      fb60?.status === 'failed',
+      },
+    ];
+  }
+
+  // ── MIGO (Goods Receipt) flow ─────────────────────────────────────────────
+  if (isMigo) {
+    const grn  = doc.grn_posting  as { grn_number?: string; posted_at?: string; status?: string; already_done?: boolean } | null;
+    const miro = doc.miro_posting as { miro_number?: string; posted_at?: string; status?: string } | null;
+    return [
+      step0,
+      step1,
+      {
+        key:         'gr_posted',
+        label:       'Goods Receipt (MIGO)',
+        description: grn?.status === 'success'
+          ? grn.already_done ? 'Already received in SAP' : `GRN: ${grn.grn_number}`
+          : status === DocumentStatus.GR_POSTING
+            ? 'Posting GR to SAP MIGO…'
+            : 'Pending',
+        timestamp:   grn?.posted_at ?? null,
+        done:        grn?.status === 'success',
+        active:      status === DocumentStatus.GR_POSTING,
+        failed:      grn?.status === 'failed',
+      },
+      {
+        key:         'posted',
+        label:       'Invoice Posting (MIRO)',
+        description: miro?.status === 'success'
+          ? `MIRO: ${miro.miro_number}`
+          : status === DocumentStatus.POSTING
+            ? 'Posting invoice to SAP MIRO…'
+            : 'Pending',
+        timestamp:   miro?.posted_at ?? null,
+        done:        miro?.status === 'success',
+        active:      status === DocumentStatus.POSTING,
+        failed:      miro?.status === 'failed',
+      },
+    ];
+  }
+
+  // ── PO Invoice (MIRO) flow ────────────────────────────────────────────────
+  const miro = doc.miro_posting as { miro_number?: string; posted_at?: string; status?: string } | null;
   return [
-    {
-      key:         'uploaded',
-      label:       'Document Uploaded',
-      description: doc.file?.original_name ?? 'File received',
-      timestamp:   doc.uploaded_at,
-      done:        true,
-      active:      false,
-      failed:      false,
-    },
-    {
-      key:         'extracted',
-      label:       'OCR Extraction',
-      description: doc.extracted
-        ? `${doc.extracted.line_items?.length ?? 0} line item${doc.extracted.line_items?.length === 1 ? '' : 's'} extracted`
-        : status === DocumentStatus.EXTRACTING
-          ? 'Processing with Gemini AI…'
-          : 'Pending',
-      timestamp:   doc.extracted ? doc.updated_at : null,
-      done:        !!doc.extracted,
-      active:      status === DocumentStatus.EXTRACTING,
-      failed:      isFailed && currentIdx < 1,
-    },
+    step0,
+    step1,
     {
       key:         'validated',
-      label:       'SAP Validation',
+      label:       'SAP PO Validation',
       description: doc.sap_validation
-        ? `Score: ${Math.round(doc.sap_validation.overall_confidence * 100)}%`
+        ? `Score: ${Math.round((doc.sap_validation as { overall_confidence: number }).overall_confidence * 100)}%`
         : status === DocumentStatus.VALIDATING
-          ? 'Validating against SAP…'
+          ? 'Validating against SAP PO…'
           : 'Pending',
-      timestamp:   doc.sap_validation?.fetched_at,
+      timestamp:   (doc.sap_validation as { fetched_at?: string } | null)?.fetched_at ?? null,
       done:        !!doc.sap_validation,
       active:      status === DocumentStatus.VALIDATING,
-      failed:      isFailed && currentIdx < 2,
+      failed:      isFailed && !doc.sap_validation,
     },
     {
       key:         'posted',
-      label:       'MIRO Posting',
-      description: doc.miro_posting
-        ? `MIRO: ${doc.miro_posting.miro_number}`
+      label:       'MIRO Invoice Posting',
+      description: miro?.status === 'success'
+        ? `MIRO: ${miro.miro_number}`
         : status === DocumentStatus.POSTING
           ? 'Posting to SAP MIRO…'
           : 'Pending',
-      timestamp:   doc.miro_posting?.posted_at,
-      done:        !!doc.miro_posting,
+      timestamp:   miro?.posted_at ?? null,
+      done:        miro?.status === 'success',
       active:      status === DocumentStatus.POSTING,
-      failed:      isFailed && currentIdx < 3,
+      failed:      miro?.status === 'failed',
     },
   ];
 }
@@ -294,7 +363,17 @@ function AuditDrawer({ docId, open, onClose }: { docId: string; open: boolean; o
 
 function SummaryStrip({ doc }: { doc: Document }) {
   const extracted = doc.extracted;
-  const miro      = doc.miro_posting;
+  const isNonPO   = doc.tcode === 'FB60' || doc.invoice_subtype === 'non_po' || !!doc.fb60_posting;
+  const isMigo    = doc.tcode === 'MIGO' || doc.type === 'goods_receipt';
+  const fb60      = doc.fb60_posting  as { fb60_number?: string; status?: string } | null;
+  const grn       = doc.grn_posting   as { grn_number?: string; status?: string } | null;
+  const miro      = doc.miro_posting  as { miro_number?: string; status?: string } | null;
+
+  const sapRef = isNonPO
+    ? fb60?.fb60_number   ? { label: 'FB60 No.',  value: fb60.fb60_number,   color: 'text-indigo-700' } : null
+    : isMigo
+      ? grn?.grn_number   ? { label: 'GRN No.',   value: grn.grn_number,    color: 'text-teal-700'   } : null
+      : miro?.miro_number ? { label: 'MIRO No.',  value: miro.miro_number,  color: 'text-green-700'  } : null;
 
   return (
     <div className="grid grid-cols-1 gap-px rounded-xl border border-neutral-200 bg-neutral-200 overflow-hidden sm:grid-cols-3">
@@ -319,17 +398,17 @@ function SummaryStrip({ doc }: { doc: Document }) {
         <p className="mt-1 text-xs text-neutral-400">{formatDate(doc.uploaded_at)}</p>
       </div>
 
-      {/* Amount & MIRO */}
+      {/* Amount & SAP reference number */}
       <div className="bg-white px-5 py-4">
         <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Amount</p>
         <p className="mt-1 text-sm font-bold text-neutral-900 tabular-nums">
           {extracted?.gross_amount ? toINR(Number(extracted.gross_amount)) : '—'}
         </p>
-        {miro?.miro_number && (
-          <p className="mt-0.5 font-mono text-xs text-green-700">
-            MIRO: {miro.miro_number}
+        {sapRef ? (
+          <p className={`mt-0.5 font-mono text-xs ${sapRef.color}`}>
+            {sapRef.label}: {sapRef.value}
           </p>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -421,7 +500,8 @@ export default function DocumentDetailPage() {
   const grn        = doc.grn_posting;
   const miro       = doc.miro_posting;
   const status     = doc.status as DocumentStatus;
-  const isMigo     = doc.tcode === 'MIGO';
+  const isMigo     = doc.tcode === 'MIGO' || doc.type === 'goods_receipt';
+  const isNonPO    = doc.tcode === 'FB60' || doc.invoice_subtype === 'non_po' || !!doc.fb60_posting;
 
   return (
     <>
@@ -442,7 +522,7 @@ export default function DocumentDetailPage() {
             Retry OCR
           </button>
         )}
-        {status === DocumentStatus.EXTRACTED && !isMigo && (
+        {status === DocumentStatus.EXTRACTED && !isMigo && !isNonPO && (
           <button
             type="button"
             onClick={() => validateMutation.mutate()}
@@ -749,6 +829,58 @@ export default function DocumentDetailPage() {
                     </p>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* FB60 result — Non-PO invoices */}
+            {doc.fb60_posting && (
+              <div className={cn(
+                'rounded-xl border p-5',
+                (doc.fb60_posting as { status?: string }).status === 'success'
+                  ? 'border-indigo-200 bg-indigo-50'
+                  : 'border-red-200 bg-red-50',
+              )}>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className={cn(
+                    'flex h-9 w-9 items-center justify-center rounded-full',
+                    (doc.fb60_posting as { status?: string }).status === 'success' ? 'bg-indigo-100' : 'bg-red-100',
+                  )}>
+                    {(doc.fb60_posting as { status?: string }).status === 'success'
+                      ? <CheckCircle2 className="h-5 w-5 text-indigo-600" />
+                      : <AlertCircle  className="h-5 w-5 text-red-600" />}
+                  </div>
+                  <div className="flex-1">
+                    <p className={cn('text-sm font-semibold',
+                      (doc.fb60_posting as { status?: string }).status === 'success' ? 'text-indigo-900' : 'text-red-900',
+                    )}>
+                      {(doc.fb60_posting as { status?: string }).status === 'success'
+                        ? 'Non-PO Invoice Posted (FB60)'
+                        : 'FB60 Posting Failed'}
+                    </p>
+                    <p className={cn('text-xs',
+                      (doc.fb60_posting as { status?: string }).status === 'success' ? 'text-indigo-600' : 'text-red-500',
+                    )}>
+                      {formatDateTime((doc.fb60_posting as { posted_at?: string }).posted_at ?? '')}
+                    </p>
+                  </div>
+                  {(doc.fb60_posting as { fb60_number?: string }).fb60_number ? (
+                    <div className="text-right">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400">FB60 Number</p>
+                      <p className="font-mono text-lg font-bold tracking-wide text-indigo-900">
+                        {(doc.fb60_posting as { fb60_number?: string }).fb60_number}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+                {(doc.fb60_posting as { message?: string }).message ? (
+                  <ul className="mt-2 list-disc list-inside space-y-0.5">
+                    {((doc.fb60_posting as { message?: string }).message ?? '').split(' | ').map((msg, i) => (
+                      <li key={i} className={cn('text-xs',
+                        (doc.fb60_posting as { status?: string }).status === 'success' ? 'text-indigo-700' : 'text-red-700',
+                      )}>{msg}</li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
             )}
 

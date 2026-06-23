@@ -50,6 +50,7 @@ export const STATUS_CONFIG: Record<DocumentStatus, StatusConfig> = {
 
 export const TCODE_LABEL: Record<TCode, string> = {
   [TCode.MIRO]: 'Invoice Verification',
+  [TCode.FB60]: 'Non-PO Invoice',
   [TCode.FF67]: 'Bank Statement',
   [TCode.F28]:  'Payment Posting',
   [TCode.MIGO]: 'Goods Movement',

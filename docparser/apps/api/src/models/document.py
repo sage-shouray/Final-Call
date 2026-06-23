@@ -24,6 +24,7 @@ class DocumentType(StrEnum):
 
 class TCode(StrEnum):
     MIRO = "MIRO"
+    FB60 = "FB60"
     FF67 = "FF67"
     F28 = "F-28"
     MIGO = "MIGO"
