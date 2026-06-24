@@ -24,6 +24,7 @@ import structlog
 from tenacity import (
     AsyncRetrying,
     RetryError,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -315,10 +316,17 @@ async def extract_vendor_invoice(
 
     raw_gemini_response: dict[str, Any] = {}
 
+    def _is_retryable(exc: BaseException) -> bool:
+        # Do NOT retry quota errors (429) — they won't recover on retry
+        if isinstance(exc, OCRError) and "429" in str(exc):
+            return False
+        return True
+
     try:
         async for attempt in AsyncRetrying(
-            stop=stop_after_attempt(5),
-            wait=wait_exponential(multiplier=2, min=5, max=60),
+            stop=stop_after_attempt(2),
+            wait=wait_exponential(multiplier=2, min=5, max=30),
+            retry=retry_if_exception(_is_retryable),
             reraise=True,
         ):
             with attempt:
@@ -332,7 +340,7 @@ async def extract_vendor_invoice(
 
     except RetryError as exc:
         raise OCRError(
-            "Gemini API failed after 5 attempts (model overloaded — please retry)",
+            "Gemini API failed after retries (model overloaded — please retry)",
             error_code="OCR_MAX_RETRIES_EXCEEDED",
         ) from exc
 
