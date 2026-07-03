@@ -12,6 +12,7 @@ import { FileDropzone }    from '@/components/upload/FileDropzone';
 import { Skeleton }        from '@/components/ui/Skeleton';
 import { ExtractedDataForm } from '@/components/upload/ExtractedDataForm';
 import { NonPOInvoiceForm }  from '@/components/upload/NonPOInvoiceForm';
+import { SalesOrderForm }    from '@/components/upload/SalesOrderForm';
 import { ValidationPanel, ValidationLoading } from '@/components/upload/ValidationPanel';
 import { SuccessPanel, PostingLoading }        from '@/components/upload/SuccessPanel';
 import { DocumentType, DocumentStatus, InvoiceSubtype, type ExtractedData, type FB60FormData } from '@/types';
@@ -31,23 +32,25 @@ type WizardStep =
   | 'complete';
 
 interface WizardState {
-  step:            WizardStep;
-  documentId:      string | null;
-  document:        Document | null;
-  file:            File | null;
-  selectedType:    DocumentType;
-  invoiceSubtype:  InvoiceSubtype | null;
-  editedData:      ExtractedData | null;
+  step:             WizardStep;
+  documentId:       string | null;
+  document:         Document | null;
+  file:             File | null;
+  selectedType:     DocumentType;
+  parentInvoiceType: 'po' | 'non_po' | null;
+  invoiceSubtype:   InvoiceSubtype | null;
+  editedData:       ExtractedData | null;
 }
 
 const INITIAL: WizardState = {
-  step:           'upload',
-  documentId:     null,
-  document:       null,
-  file:           null,
-  selectedType:   DocumentType.VENDOR_INVOICE,
-  invoiceSubtype: null,
-  editedData:     null,
+  step:              'upload',
+  documentId:        null,
+  document:          null,
+  file:              null,
+  selectedType:      DocumentType.VENDOR_INVOICE,
+  parentInvoiceType: null,
+  invoiceSubtype:    null,
+  editedData:        null,
 };
 
 // ─── Step config ──────────────────────────────────────────────────────────────
@@ -355,6 +358,18 @@ export default function UploadPage() {
     }
   }
 
+  async function handleSimulate(customerId: string) {
+    if (!state.documentId) return;
+    setState((s) => ({ ...s, step: 'validating' }));
+    try {
+      await api.post(`/documents/${state.documentId}/so-simulate`, { customer_id: customerId });
+      toast.success('Simulation started — waiting for SAP response…');
+    } catch {
+      toast.error('Simulation failed. Please try again.');
+      setState((s) => ({ ...s, step: 'extracted' }));
+    }
+  }
+
   // ── Reset ────────────────────────────────────────────────────────────────────
 
   function reset() {
@@ -366,12 +381,15 @@ export default function UploadPage() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
-  const isUploading  = state.step === 'upload' && uploadProgress > 0 && uploadProgress < 100;
-  const doc          = state.document;
-  const isMigo       = state.selectedType === DocumentType.GOODS_RECEIPT;
-  const isVendorInv  = state.selectedType === DocumentType.VENDOR_INVOICE;
-  const isNonPO      = isVendorInv && state.invoiceSubtype === InvoiceSubtype.NON_PO;
-  const needsSubtype = isVendorInv && state.invoiceSubtype === null;
+  const isUploading   = state.step === 'upload' && uploadProgress > 0 && uploadProgress < 100;
+  const doc           = state.document;
+  const isMigo        = state.selectedType === DocumentType.GOODS_RECEIPT;
+  const isVendorInv   = state.selectedType === DocumentType.VENDOR_INVOICE;
+  const isFreightInv  = state.selectedType === DocumentType.FREIGHT_INVOICE;
+  const isSalesOrder  = state.selectedType === DocumentType.SALES_ORDER;
+  const isNonPO       = isVendorInv && state.invoiceSubtype === InvoiceSubtype.NON_PO;
+  const isServicePO   = isVendorInv && state.invoiceSubtype === InvoiceSubtype.SERVICE_PO;
+  const needsSubtype  = isVendorInv && state.invoiceSubtype === null;
 
   return (
     <>
@@ -396,36 +414,76 @@ export default function UploadPage() {
               <h2 className="text-sm font-semibold text-neutral-800">Select Document Type</h2>
               <DocTypePicker
                 value={state.selectedType}
-                onChange={(type) => setState((s) => ({ ...s, selectedType: type, invoiceSubtype: null }))}
+                onChange={(type) => setState((s) => ({
+                  ...s,
+                  selectedType: type,
+                  parentInvoiceType: null,
+                  invoiceSubtype: type === DocumentType.FREIGHT_INVOICE ? InvoiceSubtype.FREIGHT_PO : null,
+                }))}
               />
             </div>
 
-            {/* Invoice sub-type selector — only for Vendor Invoice */}
+            {/* Invoice sub-type selector — only for Vendor Invoice (not Freight Invoice, which auto-routes) */}
             {isVendorInv && (
-              <div className="rounded-xl border border-neutral-200 bg-white p-5 space-y-3">
+              <div className="rounded-xl border border-neutral-200 bg-white p-5 space-y-4">
                 <h2 className="text-sm font-semibold text-neutral-800">Invoice Type</h2>
+
+                {/* Level 1: PO / Non-PO */}
                 <div className="grid grid-cols-2 gap-3">
                   {([
-                    { value: InvoiceSubtype.PO,     label: 'PO Invoice',     desc: 'Invoice linked to a Purchase Order' },
-                    { value: InvoiceSubtype.NON_PO,  label: 'Non-PO Invoice', desc: 'Direct GL posting — no Purchase Order required' },
-                  ] as const).map(opt => (
+                    { value: 'po'     as const, label: 'PO Invoice',     desc: 'Invoice linked to a Purchase Order' },
+                    { value: 'non_po' as const, label: 'Non-PO Invoice', desc: 'Direct GL posting — no Purchase Order' },
+                  ]).map(opt => (
                     <button
                       key={opt.value}
                       type="button"
-                      onClick={() => setState(s => ({ ...s, invoiceSubtype: opt.value }))}
+                      onClick={() => setState(s => ({
+                        ...s,
+                        parentInvoiceType: opt.value,
+                        invoiceSubtype: opt.value === 'non_po' ? InvoiceSubtype.NON_PO : null,
+                      }))}
                       className={`rounded-xl border-2 p-4 text-left transition-all ${
-                        state.invoiceSubtype === opt.value
+                        state.parentInvoiceType === opt.value
                           ? 'border-primary-500 bg-primary-50'
                           : 'border-neutral-200 bg-white hover:border-neutral-300'
                       }`}
                     >
-                      <p className={`text-sm font-semibold ${state.invoiceSubtype === opt.value ? 'text-primary-700' : 'text-neutral-800'}`}>
+                      <p className={`text-sm font-semibold ${state.parentInvoiceType === opt.value ? 'text-primary-700' : 'text-neutral-800'}`}>
                         {opt.label}
                       </p>
                       <p className="mt-1 text-xs text-neutral-500">{opt.desc}</p>
                     </button>
                   ))}
                 </div>
+
+                {/* Level 2: Material PO / Service PO — only when PO selected */}
+                {state.parentInvoiceType === 'po' && (
+                  <div>
+                    <p className="mb-2 text-xs text-neutral-500 font-medium">Select PO type:</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {([
+                        { value: InvoiceSubtype.PO,         label: 'Material PO', desc: 'Physical goods — GR (MIGO) then invoice (MIRO)' },
+                        { value: InvoiceSubtype.SERVICE_PO,  label: 'Service PO',  desc: 'Services — validate SES then invoice (MIRO)' },
+                      ] as const).map(opt => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setState(s => ({ ...s, invoiceSubtype: opt.value }))}
+                          className={`rounded-xl border-2 p-4 text-left transition-all ${
+                            state.invoiceSubtype === opt.value
+                              ? 'border-indigo-500 bg-indigo-50'
+                              : 'border-neutral-200 bg-white hover:border-neutral-300'
+                          }`}
+                        >
+                          <p className={`text-sm font-semibold ${state.invoiceSubtype === opt.value ? 'text-indigo-700' : 'text-neutral-800'}`}>
+                            {opt.label}
+                          </p>
+                          <p className="mt-1 text-xs text-neutral-500">{opt.desc}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -454,8 +512,171 @@ export default function UploadPage() {
           />
         )}
 
-        {/* ── PO Invoice flow: Step 3 Review / Step 4 Validate ───────────── */}
-        {!isMigo && !isNonPO && state.step === 'extracted' && state.editedData && (
+        {/* ── Service PO / Freight Invoice flow: validate → MIRO ───────── */}
+        {(isServicePO || isFreightInv) && state.step === 'extracted' && state.editedData && (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs text-indigo-700 font-medium">
+              {isFreightInv
+                ? 'Freight Invoice — validates GR against SAP PO, then posts to MIRO (no MIGO step required)'
+                : 'Service PO — validates invoice details against SAP, then posts to MIRO (no MIGO required)'}
+            </div>
+            <ExtractedDataForm
+              data={state.editedData}
+              onDataChange={(updated) => setState((s) => ({ ...s, editedData: updated }))}
+              onValidate={handleValidate}
+              isValidating={false}
+              validateLabel={isFreightInv ? 'Validate Freight Invoice' : 'Validate Service PO'}
+            />
+          </div>
+        )}
+        {(isServicePO || isFreightInv) && state.step === 'validating' && (
+          <div className="rounded-xl border border-neutral-200 bg-white p-8">
+            <ValidationLoading />
+          </div>
+        )}
+        {(isServicePO || isFreightInv) && state.step === 'validated' && doc?.sap_validation && (
+          <ValidationPanel
+            validation={doc.sap_validation}
+            onPost={handlePostMiro}
+            isPosting={false}
+          />
+        )}
+
+        {/* ── Sales Order flow: Step 3 Customer Search + Simulate ─────────── */}
+        {isSalesOrder && state.step === 'extracted' && state.editedData && (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs text-violet-700 font-medium">
+              Sales Order (VA01) — search and confirm customer, review line items, then simulate via SAP
+            </div>
+            <SalesOrderForm
+              extracted={state.editedData}
+              onSimulate={handleSimulate}
+              isSimulating={false}
+            />
+          </div>
+        )}
+        {isSalesOrder && state.step === 'validating' && (
+          <div className="rounded-xl border border-neutral-200 bg-white p-8">
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="h-10 w-10 rounded-full bg-violet-100 flex items-center justify-center">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
+              </div>
+              <p className="text-sm font-semibold text-neutral-800">Simulating Sales Order…</p>
+              <p className="text-xs text-neutral-400">Sending to SAP ZDATA_HOLD/DATA_SIMULATE</p>
+            </div>
+          </div>
+        )}
+        {isSalesOrder && state.step === 'validated' && doc && (() => {
+          const sim = doc.so_simulation as Record<string, unknown> | null;
+          const sapResp = (sim?.sap_response ?? {}) as Record<string, unknown>;
+          const isSuccess = (sim?.status === 'success') || String(sapResp?.STATUS ?? '').toUpperCase() === 'SUCCESS';
+          const sapMessage = String(sapResp?.MESSAGE ?? sapResp?.message ?? '');
+          return (
+            <div className={`rounded-xl border p-5 space-y-3 ${isSuccess ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+              <div className="flex items-center gap-2">
+                <div className={`h-8 w-8 rounded-full flex items-center justify-center ${isSuccess ? 'bg-green-100' : 'bg-red-100'}`}>
+                  {isSuccess
+                    ? <svg className="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    : <svg className="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  }
+                </div>
+                <div>
+                  <p className={`text-sm font-semibold ${isSuccess ? 'text-green-800' : 'text-red-700'}`}>
+                    {isSuccess ? 'Simulation Successful' : 'Simulation Failed'}
+                  </p>
+                  <p className={`text-xs mt-0.5 ${isSuccess ? 'text-green-600' : 'text-red-500'}`}>{sapMessage}</p>
+                </div>
+              </div>
+              <div className={`rounded-lg bg-white border p-3 text-xs text-neutral-600 ${isSuccess ? 'border-green-100' : 'border-red-100'}`}>
+                <pre className="whitespace-pre-wrap break-all">{JSON.stringify(sapResp, null, 2)}</pre>
+              </div>
+              {isSuccess && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const sim = doc.so_simulation as Record<string, unknown> | null;
+                    const payload = sim?.payload_sent as Record<string, unknown> | null;
+                    const custId = (payload?.partners as {partn_numb: string}[] | null)?.[0]?.partn_numb ?? '';
+                    if (!custId || !state.documentId) return;
+                    setState(s => ({ ...s, step: 'posting' }));
+                    try {
+                      await api.post(`/documents/${state.documentId}/so-create`, { customer_id: custId });
+                      toast.success('Sales Order creation started…');
+                    } catch {
+                      toast.error('Failed to create Sales Order.');
+                      setState(s => ({ ...s, step: 'validated' }));
+                    }
+                  }}
+                  className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors"
+                >
+                  Create Sales Order
+                </button>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* ── Sales Order: posting spinner ───────────────────────────────── */}
+        {isSalesOrder && state.step === 'posting' && (
+          <div className="rounded-xl border border-neutral-200 bg-white p-8">
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+              </div>
+              <p className="text-sm font-semibold text-neutral-800">Creating Sales Order in SAP…</p>
+              <p className="text-xs text-neutral-400">Sending to ZCREATE_SALESOR/SALESORDER_CREATE</p>
+            </div>
+          </div>
+        )}
+        {/* ── Sales Order: created result ─────────────────────────────────── */}
+        {isSalesOrder && state.step === 'complete' && doc && (() => {
+          const posting = doc.so_posting as Record<string, unknown> | null;
+          const isSuccess = posting?.status === 'success';
+          const soNumber  = String(posting?.sales_order_number ?? '');
+          const returnMsgs = (posting?.return_messages ?? []) as {TYPE: string; MESSAGE: string}[];
+          const errors   = returnMsgs.filter(m => m.TYPE === 'E');
+          const warnings = returnMsgs.filter(m => m.TYPE === 'W');
+          const successes = returnMsgs.filter(m => m.TYPE === 'S');
+          return (
+            <div className={`rounded-xl border p-5 space-y-4 ${isSuccess ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`h-9 w-9 rounded-full flex items-center justify-center ${isSuccess ? 'bg-green-100' : 'bg-red-100'}`}>
+                  {isSuccess
+                    ? <svg className="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    : <svg className="h-5 w-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  }
+                </div>
+                <div>
+                  <p className={`text-sm font-semibold ${isSuccess ? 'text-green-800' : 'text-red-700'}`}>
+                    {isSuccess ? `Sales Order Created — ${soNumber}` : 'Sales Order Creation Failed'}
+                  </p>
+                  {isSuccess && <p className="text-xs text-green-600 mt-0.5">Order number: <span className="font-bold">{soNumber}</span></p>}
+                </div>
+              </div>
+              {/* SAP RETURN messages */}
+              <div className="space-y-1.5">
+                {successes.map((m, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs text-green-700 bg-green-100 rounded px-2.5 py-1.5">
+                    <span className="font-bold shrink-0">S</span><span>{m.MESSAGE}</span>
+                  </div>
+                ))}
+                {warnings.map((m, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded px-2.5 py-1.5">
+                    <span className="font-bold shrink-0">W</span><span>{m.MESSAGE}</span>
+                  </div>
+                ))}
+                {errors.map((m, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs text-red-700 bg-red-100 rounded px-2.5 py-1.5">
+                    <span className="font-bold shrink-0">E</span><span>{m.MESSAGE}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── Material PO flow: Step 3 Review / Step 4 Validate ──────────── */}
+        {!isMigo && !isNonPO && !isServicePO && !isFreightInv && !isSalesOrder && state.step === 'extracted' && state.editedData && (
           <ExtractedDataForm
             data={state.editedData}
             onDataChange={(updated) => setState((s) => ({ ...s, editedData: updated }))}
@@ -463,12 +684,12 @@ export default function UploadPage() {
             isValidating={false}
           />
         )}
-        {!isMigo && !isNonPO && state.step === 'validating' && (
+        {!isMigo && !isNonPO && !isServicePO && !isFreightInv && !isSalesOrder && state.step === 'validating' && (
           <div className="rounded-xl border border-neutral-200 bg-white p-8">
             <ValidationLoading />
           </div>
         )}
-        {!isMigo && !isNonPO && state.step === 'validated' && doc?.sap_validation && (
+        {!isMigo && !isNonPO && !isServicePO && !isFreightInv && !isSalesOrder && state.step === 'validated' && doc?.sap_validation && (
           <ValidationPanel
             validation={doc.sap_validation}
             onPost={handlePostMiro}
@@ -588,7 +809,7 @@ export default function UploadPage() {
           <div className="rounded-xl border border-neutral-200 bg-white p-8">
             <PostingLoading
               lineItemCount={state.editedData?.line_items?.length ?? 0}
-              target={isNonPO ? 'FB60' : isMigo ? 'MIRO (via MIGO)' : 'MIRO'}
+              target={isNonPO ? 'FB60' : isMigo ? 'MIRO (via MIGO)' : isServicePO ? 'MIRO (Service PO)' : 'MIRO'}
             />
           </div>
         )}

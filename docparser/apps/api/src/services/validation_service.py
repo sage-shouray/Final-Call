@@ -23,7 +23,7 @@ from typing import Any
 
 import structlog
 
-from src.schemas.sap import SAPPOResponse
+from src.schemas.sap import SAPPOResponse, SAPServicePOResponse
 
 log = structlog.get_logger(__name__)
 
@@ -190,6 +190,114 @@ async def validate_invoice_against_po(
         "overall_confidence": round(overall_confidence, 4),
         "mismatches": mismatches,
         "gr_status": gr_status_list,
+        "is_valid": is_valid,
+        "recommendation": recommendation,
+    }
+
+
+async def validate_service_invoice_against_po(
+    extracted: dict[str, Any],
+    sap_spo: SAPServicePOResponse,
+) -> dict[str, Any]:
+    """Validate a Service PO invoice against SAP zspodetail data.
+
+    Simpler than material PO — no GR quantity checks.
+    Key check: SES must be approved (GRN list non-empty).
+    """
+    mismatches: list[dict[str, str]] = []
+
+    # ── Vendor name match (40%) ───────────────────────────────────────────
+    inv_vendor = extracted.get("vendor_name") or ""
+    sap_vendor = sap_spo.VENDOR_NAME
+    vendor_ratio = _ratio(inv_vendor, sap_vendor)
+    if vendor_ratio < 0.80:
+        mismatches.append(_mismatch("vendor_name", inv_vendor, sap_vendor,
+                                    "error" if vendor_ratio < 0.50 else "warning"))
+
+    # ── Gross amount match ±1.00 (40%) ───────────────────────────────────
+    inv_amount = _dec(extracted.get("gross_amount", "0"))
+    sap_amount = _dec(sap_spo.GROSS_AMOUNT)
+    amount_diff = abs(inv_amount - sap_amount)
+    amount_score = 1.0 if amount_diff <= Decimal("1.00") else max(0.0, float(1 - amount_diff / max(sap_amount, Decimal("1"))))
+    if amount_diff > Decimal("1.00"):
+        mismatches.append(_mismatch("gross_amount", str(inv_amount), str(sap_amount), "error"))
+
+    # ── SES approved check (20%) ─────────────────────────────────────────
+    ses_score = 1.0 if sap_spo.ses_approved else 0.0
+
+    header_confidence = vendor_ratio * 0.40 + amount_score * 0.40 + ses_score * 0.20
+
+    # ── Service line checks ───────────────────────────────────────────────
+    inv_lines: list[dict[str, Any]] = extracted.get("line_items") or []
+    sap_line_map = {item.ITEM_NUMBER.strip(): item for item in sap_spo.PO_LINE_ITEMS}
+
+    lines_ok = 0
+    ses_status_list: list[dict[str, Any]] = []
+
+    for inv_line in inv_lines:
+        line_num = str(inv_line.get("line_number") or "").strip()
+        sap_line = sap_line_map.get(line_num)
+        line_has_mismatch = False
+
+        if sap_line is None:
+            mismatches.append(_mismatch(f"line_items[{line_num}]", line_num, "NOT_FOUND", "warning"))
+            line_has_mismatch = True
+        else:
+            # Service description match
+            inv_desc = (inv_line.get("description") or "").strip()
+            sap_desc = sap_line.DESCRIPTION.strip()
+            desc_ratio = _ratio(inv_desc, sap_desc)
+            if desc_ratio < 0.60:
+                mismatches.append(_mismatch(f"line[{line_num}].description", inv_desc, sap_desc, "warning"))
+                line_has_mismatch = True
+
+        if not line_has_mismatch:
+            lines_ok += 1
+
+        ses_entry = sap_line.GRN[0] if (sap_line and sap_line.GRN) else None
+        ses_status_list.append({
+            "line_number": line_num,
+            "po_item": line_num,
+            "gr_documents": [ses_entry.SES_NUMBER] if ses_entry else [],
+            "total_gr_qty": float(_dec(sap_line.RECEIVED_QUANTITY)) if sap_line else 0.0,
+            "invoice_qty": float(_dec(inv_line.get("quantity", "0"))),
+            "status": "complete" if ses_entry else "missing",
+        })
+
+    total_lines = len(inv_lines)
+    line_confidence = (lines_ok / total_lines) if total_lines else 1.0
+    gr_confidence = ses_score  # for service PO, GR confidence = SES approved
+
+    overall_confidence = (
+        header_confidence * 0.50
+        + line_confidence * 0.30
+        + gr_confidence * 0.20
+    )
+    is_valid = overall_confidence >= 0.60  # slightly lower threshold for service PO
+
+    recommendation = (
+        "Service PO approved for MIRO posting." if is_valid
+        else "Service PO requires review before posting." if overall_confidence >= 0.40
+        else "Service PO has critical mismatches — do not post to SAP."
+    )
+
+    log.info(
+        "service PO validation complete",
+        overall=round(overall_confidence, 3),
+        ses_approved=sap_spo.ses_approved,
+        mismatches=len(mismatches),
+        is_valid=is_valid,
+    )
+
+    return {
+        "fetched_at": datetime.now(UTC),
+        "po_data": sap_spo.raw_response,
+        "header_confidence": round(header_confidence, 4),
+        "line_item_confidence": round(line_confidence, 4),
+        "gr_confidence": round(gr_confidence, 4),
+        "overall_confidence": round(overall_confidence, 4),
+        "mismatches": mismatches,
+        "gr_status": ses_status_list,
         "is_valid": is_valid,
         "recommendation": recommendation,
     }

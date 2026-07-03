@@ -6,7 +6,10 @@ from typing import Any
 
 import structlog
 
-from src.schemas.sap import MIROData, MIROItemData, MIROPayload, SAPPOResponse
+from src.schemas.sap import (
+    MIROData, MIROItemData, MIROPayload, SAPPOResponse,
+    SAPServicePOResponse, ServiceMIROData, ServiceMIROItemData, ServiceMIROPayload,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -107,3 +110,165 @@ def build_miro_payload(
 
     log.info("MIRO payload built", po_number=po_number, invoice_no=invoice_no, line_count=len(item_data))
     return MIROPayload(data=[miro_data])
+
+
+def build_service_miro_payload(
+    extracted: dict[str, Any],
+    sap_service_po: SAPServicePOResponse,
+    validation: dict[str, Any],
+) -> ServiceMIROPayload:
+    """Build the Service PO MIRO payload for zmiro_post/MIRO endpoint.
+
+    Key differences from material MIRO:
+    - Uses sheet_no (SES number) in each line item
+    - tax_amount included per line (not zero)
+    - reference_no = SES entry number from GRN list
+    """
+    po_number: str = sap_service_po.PO_NUMBER or extracted.get("po_number") or ""
+    invoice_no: str = extracted.get("invoice_no") or ""
+    invoice_date: str = extracted.get("invoice_date") or _today_ddmmyyyy()
+    currency: str = extracted.get("currency") or sap_service_po.CURRENCY or "INR"
+    gross_amount: float = _safe_float(extracted.get("gross_amount") or 0)
+    today = _today_ddmmyyyy()
+
+    # Map extracted line items by index for amount/tax fallback
+    extracted_lines: list[dict[str, Any]] = extracted.get("line_items") or []
+
+    item_data: list[ServiceMIROItemData] = []
+
+    for idx, sap_line in enumerate(sap_service_po.PO_LINE_ITEMS):
+        invoice_doc_no = f"{(idx + 1) * 10:06d}"
+
+        # Pull SES data from GRN list (populated when SES is approved)
+        sheet_no = ""
+        reference_no = ""
+        reference_document_year = str(datetime.now(UTC).year)
+        reference_doc_it = "0001"
+        if sap_line.GRN:
+            first_ses = sap_line.GRN[0]
+            sheet_no = first_ses.SES_NUMBER
+            reference_no = first_ses.ENTRY_NO
+            reference_document_year = first_ses.YEAR or reference_document_year
+            reference_doc_it = first_ses.ITEM or "0001"
+
+        tax_code = sap_line.TAX_CODE.strip()
+        item_amount = _safe_float(sap_line.NET_AMOUNT)
+        quantity = _safe_float(sap_line.ORDERED_QUANTITY)
+        po_unit = sap_line.UOM.strip() or "AU"
+
+        # Tax amount: prefer from extracted line item, fall back to SAP gross - net
+        tax_amount = 0.0
+        if idx < len(extracted_lines):
+            tax_amount = _safe_float(extracted_lines[idx].get("tax_amount") or 0)
+        if not tax_amount:
+            tax_amount = _safe_float(sap_line.GROSS_AMOUNT) - item_amount
+
+        item_data.append(ServiceMIROItemData(
+            invoice_document_no=invoice_doc_no,
+            po_number=po_number,
+            po_item=sap_line.ITEM_NUMBER.strip(),
+            reference_no=reference_no,
+            reference_document_year=reference_document_year,
+            reference_doc_it=reference_doc_it,
+            tax_code=tax_code,
+            item_amount=item_amount,
+            quantity=quantity,
+            po_unit=po_unit,
+            tax_amount=tax_amount,
+            sheet_no=sheet_no,
+        ))
+
+    miro_data = ServiceMIROData(
+        document_date=invoice_date,
+        posting_date=today,
+        reference_document_no=invoice_no,
+        company_code=sap_service_po.COM_CODE.strip(),
+        currency=currency,
+        gross_amount=gross_amount,
+        payment_terms=_DEFAULT_PAYMENT_TERMS,
+        baseline_date=today,
+        item_data=item_data,
+    )
+
+    log.info(
+        "Service MIRO payload built",
+        po_number=po_number,
+        invoice_no=invoice_no,
+        line_count=len(item_data),
+        ses_approved=sap_service_po.ses_approved,
+    )
+    return ServiceMIROPayload(data=[miro_data])
+
+
+def build_freight_miro_payload(
+    extracted: dict[str, Any],
+    sap_po: SAPPOResponse,
+    validation: dict[str, Any],
+) -> ServiceMIROPayload:
+    """Build Freight Invoice MIRO payload for zmiro_post/MIRO endpoint.
+
+    Validates via zpo_grn/Detail (same as material PO), but posts to zmiro_post/MIRO
+    (same as service PO). sheet_no is always empty for freight; reference_no = GR_NUMBER.
+    """
+    po_number: str = extracted.get("po_number") or sap_po.PO_NUMBER or ""
+    invoice_no: str = extracted.get("invoice_no") or ""
+    invoice_date: str = extracted.get("invoice_date") or _today_ddmmyyyy()
+    currency: str = extracted.get("currency") or sap_po.CURRENCY or "INR"
+    gross_amount: float = _safe_float(extracted.get("gross_amount") or 0)
+    today = _today_ddmmyyyy()
+
+    extracted_lines: list[dict[str, Any]] = extracted.get("line_items") or []
+    item_data: list[ServiceMIROItemData] = []
+
+    for idx, sap_line in enumerate(sap_po.PO_LINE_ITEMS):
+        invoice_doc_no = f"{(idx + 1) * 10:06d}"
+
+        reference_no = ""
+        reference_document_year = str(datetime.now(UTC).year)
+        reference_doc_it = "0001"
+        if sap_line.GRN:
+            first_grn = sap_line.GRN[0]
+            reference_no = first_grn.GR_NUMBER.strip()
+            reference_document_year = _gr_year(first_grn.GR_DATE)
+            reference_doc_it = first_grn.GR_ITEM_NUMBER.strip() or "0001"
+
+        tax_code = sap_line.TAX_CODE.strip()
+        item_amount = _safe_float(sap_line.NET_AMOUNT)
+        quantity = _safe_float(sap_line.ORDERED_QUANTITY)
+        po_unit = sap_line.UOM.strip() or "AU"
+
+        tax_amount = 0.0
+        if idx < len(extracted_lines):
+            tax_amount = _safe_float(extracted_lines[idx].get("tax_amount") or 0)
+        if not tax_amount:
+            tax_amount = _safe_float(sap_line.GROSS_AMOUNT) - item_amount
+
+        item_data.append(ServiceMIROItemData(
+            invoice_document_no=invoice_doc_no,
+            po_number=po_number,
+            po_item=sap_line.ITEM_NUMBER.strip(),
+            reference_no=reference_no,
+            reference_document_year=reference_document_year,
+            reference_doc_it=reference_doc_it,
+            tax_code=tax_code,
+            item_amount=item_amount,
+            quantity=quantity,
+            po_unit=po_unit,
+            tax_amount=tax_amount,
+            sheet_no="",  # no SES for freight — GR is auto-posted
+        ))
+
+    miro_data = ServiceMIROData(
+        document_date=invoice_date,
+        posting_date=today,
+        reference_document_no=invoice_no,
+        company_code=sap_po.COM_CODE.strip(),
+        currency=currency,
+        gross_amount=gross_amount,
+        payment_terms=_DEFAULT_PAYMENT_TERMS,
+        baseline_date=today,
+        item_data=item_data,
+    )
+
+    log.info("Freight MIRO payload built", po_number=po_number, invoice_no=invoice_no, line_count=len(item_data))
+    return ServiceMIROPayload(data=[miro_data])

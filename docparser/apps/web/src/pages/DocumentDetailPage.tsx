@@ -81,11 +81,10 @@ interface TimelineStep {
 }
 
 function getTimeline(doc: Document): TimelineStep[] {
-  const status   = doc.status as DocumentStatus;
-  const isFailed = status === DocumentStatus.FAILED;
-  const isMigo   = doc.tcode === 'MIGO' || doc.type === 'goods_receipt';
-  const isNonPO  = doc.tcode === 'FB60' || doc.invoice_subtype === 'non_po' || !!doc.fb60_posting;
-
+  const status      = doc.status as DocumentStatus;
+  const isFailed    = status === DocumentStatus.FAILED;
+  const isMigo      = doc.tcode === 'MIGO' || doc.type === 'goods_receipt';
+  const isNonPO     = doc.tcode === 'FB60' || doc.invoice_subtype === 'non_po' || !!doc.fb60_posting;
   const step0: TimelineStep = {
     key:         'uploaded',
     label:       'Document Uploaded',
@@ -181,7 +180,43 @@ function getTimeline(doc: Document): TimelineStep[] {
     ];
   }
 
-  // ── PO Invoice (MIRO) flow ────────────────────────────────────────────────
+  // ── Service PO / Freight Invoice (validate → MIRO, no MIGO) ─────────────
+  if (doc.invoice_subtype === 'service_po' || doc.invoice_subtype === 'freight_po') {
+    const isFreight = doc.invoice_subtype === 'freight_po';
+    const miro = doc.miro_posting as { miro_number?: string; posted_at?: string; status?: string } | null;
+    return [
+      step0,
+      step1,
+      {
+        key:         'validated',
+        label:       isFreight ? 'Freight GR Validation' : 'Service PO Validation',
+        description: doc.sap_validation
+          ? `Score: ${Math.round((doc.sap_validation as { overall_confidence: number }).overall_confidence * 100)}%`
+          : status === DocumentStatus.VALIDATING
+            ? isFreight ? 'Validating GR against SAP…' : 'Validating against SAP…'
+            : 'Pending',
+        timestamp:   (doc.sap_validation as { fetched_at?: string } | null)?.fetched_at ?? null,
+        done:        !!doc.sap_validation,
+        active:      status === DocumentStatus.VALIDATING,
+        failed:      isFailed && !doc.sap_validation,
+      },
+      {
+        key:         'posted',
+        label:       'MIRO Invoice Posting',
+        description: miro?.status === 'success'
+          ? `MIRO: ${miro.miro_number}`
+          : status === DocumentStatus.POSTING
+            ? 'Posting to SAP MIRO…'
+            : 'Pending',
+        timestamp:   miro?.posted_at ?? null,
+        done:        miro?.status === 'success',
+        active:      status === DocumentStatus.POSTING,
+        failed:      miro?.status === 'failed',
+      },
+    ];
+  }
+
+  // ── Material PO (MIRO) flow ───────────────────────────────────────────────
   const miro = doc.miro_posting as { miro_number?: string; posted_at?: string; status?: string } | null;
   return [
     step0,
@@ -500,8 +535,9 @@ export default function DocumentDetailPage() {
   const grn        = doc.grn_posting;
   const miro       = doc.miro_posting;
   const status     = doc.status as DocumentStatus;
-  const isMigo     = doc.tcode === 'MIGO' || doc.type === 'goods_receipt';
-  const isNonPO    = doc.tcode === 'FB60' || doc.invoice_subtype === 'non_po' || !!doc.fb60_posting;
+  const isMigo      = doc.tcode === 'MIGO' || doc.type === 'goods_receipt';
+  const isNonPO     = doc.tcode === 'FB60' || doc.invoice_subtype === 'non_po' || !!doc.fb60_posting;
+  const isServicePO = doc.invoice_subtype === 'service_po' || doc.invoice_subtype === 'freight_po';
 
   return (
     <>
@@ -532,10 +568,14 @@ export default function DocumentDetailPage() {
             {validateMutation.isPending
               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
               : <CheckCircle2 className="h-3.5 w-3.5" />}
-            Validate with SAP
+            {doc.invoice_subtype === 'freight_po'
+              ? 'Validate Freight Invoice'
+              : doc.invoice_subtype === 'service_po'
+                ? 'Validate Service PO'
+                : 'Validate with SAP'}
           </button>
         )}
-        {isMigo && (status === DocumentStatus.EXTRACTED || status === DocumentStatus.VALIDATED) && (
+        {isMigo && !isServicePO && (status === DocumentStatus.EXTRACTED || status === DocumentStatus.VALIDATED) && (
           <button
             type="button"
             onClick={() => grnMutation.mutate()}

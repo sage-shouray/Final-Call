@@ -295,17 +295,12 @@ def post_miro_document(self: Task, document_id: str, posted_by: str = "system") 
 
 
 async def run_validation_direct(document_id: str) -> None:
-    """Run SAP PO validation directly in the FastAPI event loop (no Celery needed).
-
-    Called via asyncio.create_task() — auto-triggered after OCR completes.
-    Calls POST http://SAP_BASE_URL/zpo_grn/Detail?sap-client=SAP_CLIENT with the
-    PO number extracted from the invoice.
-    """
+    """Run SAP validation directly — routes to Service PO or Material PO based on invoice_subtype."""
     from src.database import get_database
-    from src.models.document import DocumentStatus
+    from src.models.document import DocumentStatus, InvoiceSubtype
     from src.repositories.document_repository import DocumentRepository
     from src.services.sap_service import get_sap_service
-    from src.services.validation_service import validate_invoice_against_po
+    from src.services.validation_service import validate_invoice_against_po, validate_service_invoice_against_po
 
     bound_log = log.bind(document_id=document_id)
     db = get_database()
@@ -319,6 +314,9 @@ async def run_validation_direct(document_id: str) -> None:
 
         mongo_id = str(doc["_id"])
         extracted: dict[str, Any] = doc.get("extracted") or {}
+        invoice_subtype: str = doc.get("invoice_subtype") or ""
+        is_freight_po = invoice_subtype == InvoiceSubtype.FREIGHT_PO
+        is_service_po = invoice_subtype == InvoiceSubtype.SERVICE_PO
         po_number: str = extracted.get("po_number") or ""
 
         if not po_number:
@@ -336,13 +334,32 @@ async def run_validation_direct(document_id: str) -> None:
             return
 
         await doc_repo.update_status(mongo_id, DocumentStatus.VALIDATING)
-        bound_log.info("direct validation started", po_number=po_number)
-
         sap_service = get_sap_service()
-        sap_po = await sap_service.fetch_po_details(po_number)
-        bound_log.info("SAP PO fetched", po_number=po_number)
 
-        validation_result = await validate_invoice_against_po(extracted, sap_po)
+        if is_service_po:
+            # Service PO: validate via zspodetail/Detail, check SES approved
+            bound_log.info("service PO validation started", po_number=po_number)
+            sap_spo = await sap_service.fetch_service_po_details(po_number)
+            bound_log.info("SAP Service PO fetched", po_number=po_number, ses_approved=sap_spo.ses_approved)
+            if not sap_spo.ses_approved:
+                await doc_repo.update_status(
+                    mongo_id, DocumentStatus.FAILED,
+                    error_entry={
+                        "stage": "validation",
+                        "message": "Service Entry Sheet (SES) not yet approved in SAP. Please approve the SES before posting.",
+                        "detail": "SES_NOT_APPROVED",
+                        "timestamp": datetime.now(UTC),
+                    },
+                )
+                return
+            validation_result = await validate_service_invoice_against_po(extracted, sap_spo)
+        else:
+            # Material PO and Freight PO both validate via zpo_grn/Detail
+            po_label = "freight" if is_freight_po else "material"
+            bound_log.info(f"{po_label} PO validation started", po_number=po_number)
+            sap_po = await sap_service.fetch_po_details(po_number)
+            bound_log.info("SAP PO fetched", po_number=po_number)
+            validation_result = await validate_invoice_against_po(extracted, sap_po)
 
         await doc_repo.update_sap_validation(mongo_id, validation_result)
         bound_log.info(
@@ -377,14 +394,14 @@ async def run_validation_direct(document_id: str) -> None:
 
 
 async def run_miro_direct(document_id: str, posted_by: str = "system") -> None:
-    """Run MIRO posting directly in the FastAPI event loop (no Celery needed)."""
+    """Run MIRO posting directly — routes to Service PO or Material PO MIRO based on invoice_subtype."""
     import traceback as _tb
     from src.database import get_database
-    from src.models.document import DocumentStatus, MIROStatus
+    from src.models.document import DocumentStatus, InvoiceSubtype, MIROStatus
     from src.repositories.document_repository import DocumentRepository
-    from src.services.miro_service import build_miro_payload
+    from src.services.miro_service import build_miro_payload, build_service_miro_payload, build_freight_miro_payload
     from src.services.sap_service import get_sap_service
-    from src.schemas.sap import SAPPOResponse
+    from src.schemas.sap import SAPPOResponse, SAPServicePOResponse
 
     bound_log = log.bind(document_id=document_id)
     bound_log.info("run_miro_direct entered")
@@ -392,7 +409,6 @@ async def run_miro_direct(document_id: str, posted_by: str = "system") -> None:
     try:
         db = get_database()
         doc_repo = DocumentRepository(db)
-        bound_log.info("db and repo ready")
 
         doc = await doc_repo.find_by_document_id(document_id)
         if not doc:
@@ -403,20 +419,39 @@ async def run_miro_direct(document_id: str, posted_by: str = "system") -> None:
         extracted: dict[str, Any] = doc.get("extracted") or {}
         sap_validation: dict[str, Any] = doc.get("sap_validation") or {}
         po_number: str = extracted.get("po_number") or ""
-        bound_log.info("document loaded", mongo_id=mongo_id, po_number=po_number)
+        invoice_subtype: str = doc.get("invoice_subtype") or ""
+        is_freight_po = invoice_subtype == InvoiceSubtype.FREIGHT_PO
+        is_service_po = invoice_subtype == InvoiceSubtype.SERVICE_PO
+        bound_log.info("document loaded", mongo_id=mongo_id, po_number=po_number, invoice_subtype=invoice_subtype)
 
         await doc_repo.update_status(mongo_id, DocumentStatus.POSTING)
-        bound_log.info("status set to POSTING")
 
         sap_service = get_sap_service()
-        bound_log.info("fetching SAP PO", po_number=po_number)
-        sap_po = await sap_service.fetch_po_details(po_number) if po_number else SAPPOResponse()
-        bound_log.info("SAP PO fetched", line_count=len(sap_po.PO_LINE_ITEMS))
 
-        payload = build_miro_payload(extracted, sap_po, sap_validation)
-        bound_log.info("MIRO payload built", lines=len(payload.data[0].item_data))
+        if is_service_po:
+            # Service PO: fetch via zspodetail/Detail, post to zmiro_post/MIRO
+            bound_log.info("building Service PO MIRO payload", po_number=po_number)
+            sap_spo = await sap_service.fetch_service_po_details(po_number) if po_number else SAPServicePOResponse()
+            payload = build_service_miro_payload(extracted, sap_spo, sap_validation)
+            bound_log.info("Service MIRO payload built", lines=len(payload.data[0].item_data))
+            miro_resp = await sap_service.post_service_miro(payload)
+        elif is_freight_po:
+            # Freight PO: fetch via zpo_grn/Detail, post to zmiro_post/MIRO
+            bound_log.info("building Freight MIRO payload", po_number=po_number)
+            sap_po = await sap_service.fetch_po_details(po_number) if po_number else SAPPOResponse()
+            bound_log.info("SAP PO fetched for freight", line_count=len(sap_po.PO_LINE_ITEMS))
+            payload = build_freight_miro_payload(extracted, sap_po, sap_validation)
+            bound_log.info("Freight MIRO payload built", lines=len(payload.data[0].item_data))
+            miro_resp = await sap_service.post_service_miro(payload)
+        else:
+            # Material PO: fetch via zpo_grn/Detail, post to ZMIRO/MIRO
+            bound_log.info("building Material PO MIRO payload", po_number=po_number)
+            sap_po = await sap_service.fetch_po_details(po_number) if po_number else SAPPOResponse()
+            bound_log.info("SAP PO fetched", line_count=len(sap_po.PO_LINE_ITEMS))
+            payload = build_miro_payload(extracted, sap_po, sap_validation)
+            bound_log.info("MIRO payload built", lines=len(payload.data[0].item_data))
+            miro_resp = await sap_service.post_miro(payload)
 
-        miro_resp = await sap_service.post_miro(payload)
         bound_log.info("MIRO response received", miro_number=miro_resp.miro_number, success=miro_resp.success)
 
         posting_data: dict[str, Any] = {

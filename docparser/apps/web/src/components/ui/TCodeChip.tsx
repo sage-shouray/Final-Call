@@ -4,7 +4,7 @@ import { cn } from '@/lib/cn';
 const tCodeColors: Record<TCode, string> = {
   [TCode.MIRO]: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
   [TCode.FB60]: 'bg-purple-50 text-purple-700 ring-purple-200',
-  [TCode.FF67]: 'bg-violet-50 text-violet-700 ring-violet-200',
+  [TCode.VA01]: 'bg-violet-50 text-violet-700 ring-violet-200',
   [TCode.F28]:  'bg-sky-50    text-sky-700    ring-sky-200',
   [TCode.MIGO]: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
 };

@@ -27,7 +27,12 @@ from tenacity import (
 
 from src.config import settings
 from src.exceptions import SAPCircuitOpenError, SAPConnectionError
-from src.schemas.sap import FB60Payload, FB60Response, GRNPayload, GRNResponse, MIROPayload, MIROResponse, SAPPOResponse
+from src.schemas.sap import (
+    FB60Payload, FB60Response, GRNPayload, GRNResponse,
+    MIROPayload, MIROResponse, SAPPOResponse,
+    SAPServicePOResponse, SAPServicePOLineItem, SAPServicePOGRNEntry,
+    ServiceMIROPayload,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -417,6 +422,162 @@ class SAPService:
             success=success,
         )
 
+
+    async def fetch_service_po_details(self, po_number: str) -> SAPServicePOResponse:
+        """Fetch Service PO + SES details from SAP zspodetail/Detail."""
+        log.info("fetching Service PO from SAP", po_number=po_number)
+        url = self._sap_url("zspodetail/Detail")
+
+        async for attempt in AsyncRetrying(
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            stop=stop_after_attempt(3),
+            retry=retry_if_exception_type(aiohttp.ClientError),
+            reraise=True,
+        ):
+            with attempt:
+                raw = await self._http_get_with_body(url, {"PO": po_number})
+
+        line_items: list[SAPServicePOLineItem] = []
+        for item in raw.get("PO_LINE_ITEMS", []):
+            grn_list: list[SAPServicePOGRNEntry] = []
+            for g in item.get("GRN", []):
+                # Service PO: SES_NUMBER/ENTRY_NO fields
+                # Freight PO: GR_NUMBER/GR_DATE/GR_ITEM_NUMBER/SSES_NO fields
+                ses_number = str(g.get("SES_NUMBER") or g.get("SHEET_NO") or g.get("SSES_NO") or "").strip()
+                entry_no   = str(g.get("ENTRY_NO") or g.get("REFERENCE_NO") or g.get("GR_NUMBER") or "").strip()
+                # Year: from YEAR field, or SSES_YEAR, or first 4 chars of GR_DATE (YYYYMMDD)
+                raw_year = str(g.get("YEAR") or g.get("SSES_YEAR") or g.get("REFERENCE_YEAR") or "").strip()
+                if not raw_year:
+                    gr_date = str(g.get("GR_DATE") or "").strip()
+                    raw_year = gr_date[:4] if len(gr_date) >= 4 else ""
+                item_no = str(g.get("ITEM") or g.get("ITEM_NO") or g.get("GR_ITEM_NUMBER") or "0001").strip()
+                grn_list.append(SAPServicePOGRNEntry(
+                    SES_NUMBER=ses_number,
+                    ENTRY_NO=entry_no,
+                    YEAR=raw_year,
+                    ITEM=item_no,
+                ))
+            line_items.append(SAPServicePOLineItem(
+                ITEM_NUMBER=str(item.get("ITEM_NUMBER", "")).strip(),
+                TYPE=str(item.get("TYPE", "")).strip(),
+                MATERIAL_CODE=str(item.get("MATERIAL_CODE", "")).strip(),
+                DESCRIPTION=str(item.get("DESCRIPTION", "")).strip(),
+                ORDERED_QUANTITY=str(item.get("ORDERED_QUANTITY", "0")).strip(),
+                RECEIVED_QUANTITY=str(item.get("RECEIVED_QUANTITY", "0")).strip(),
+                INVOICED_QUANTITY=str(item.get("INVOICED_QUANTITY", "0")).strip(),
+                UOM=str(item.get("UOM", "")).strip(),
+                UNIT_PRICE=str(item.get("UNIT_PRICE", "0")).strip(),
+                NET_AMOUNT=str(item.get("NET_AMOUNT", "0")).strip(),
+                GROSS_AMOUNT=str(item.get("GROSS_AMOUNT", "0")).strip(),
+                TAX_CODE=str(item.get("TAX_CODE", "")).strip(),
+                GRN=grn_list,
+            ))
+
+        return SAPServicePOResponse(
+            PO_NUMBER=raw.get("PO_NUMBER", ""),
+            PO_DATE=raw.get("PO_DATE", ""),
+            VENDOR_ID=raw.get("VENDOR_ID", ""),
+            VENDOR_NAME=raw.get("VENDOR_NAME", ""),
+            CURRENCY=raw.get("CURRENCY", "INR"),
+            GROSS_AMOUNT=str(raw.get("GROSS_AMOUNT", "0")).strip(),
+            NET_AMOUNT=str(raw.get("NET_AMOUNT", "0")).strip(),
+            COM_CODE=raw.get("COM_CODE", ""),
+            BUYER_ID=raw.get("BUYER_ID", ""),
+            PO_LINE_ITEMS=line_items,
+            raw_response=raw,
+        )
+
+    async def post_service_miro(self, payload: ServiceMIROPayload) -> MIROResponse:
+        """Post a Service PO invoice to SAP via zmiro_post/MIRO endpoint."""
+        import re as _re
+        log.info("posting Service PO MIRO to SAP")
+        url = self._sap_url("zmiro_post/MIRO")
+        raw_payload = SAPService._clean_numbers(payload.model_dump())
+        raw: dict[str, Any] = await self._http_post(url, raw_payload)
+
+        miro_number = str(
+            raw.get("INVOICE_DOCUMENT_NO") or raw.get("MIRO_NUMBER") or raw.get("DOC_NO") or ""
+        ).strip()
+        message = MIROResponse.parse_message(raw.get("MESSAGE", ""))
+
+        if not miro_number and message:
+            match = _re.search(r'\b(\d{10})\b', message)
+            if match:
+                miro_number = match.group(1)
+
+        success = bool(miro_number)
+        log.info("Service MIRO response", miro_number=miro_number, success=success, message=message)
+
+        return MIROResponse(
+            miro_number=miro_number,
+            status=raw.get("STATUS", "S") if success else raw.get("STATUS", "") or "",
+            message=message,
+            sap_response=raw,
+            success=success,
+        )
+
+    async def fetch_all_customers(self) -> list[dict[str, Any]]:
+        """Fetch all customers from SAP ZCUSTOMER/CUSTOMER endpoint."""
+        log.info("fetching all customers from SAP")
+        url = self._sap_url("ZCUSTOMER/CUSTOMER")
+        # Large timeout — 3.5 lakh records can take 60-120 seconds
+        big_timeout = aiohttp.ClientTimeout(total=180)
+        async for attempt in AsyncRetrying(
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            stop=stop_after_attempt(2),
+            retry=retry_if_exception_type(aiohttp.ClientError),
+            reraise=True,
+        ):
+            with attempt:
+                async with aiohttp.ClientSession(timeout=big_timeout) as session:
+                    async with session.get(url) as resp:
+                        resp.raise_for_status()
+                        raw = await resp.json(content_type=None)
+        customers = raw if isinstance(raw, list) else raw.get("CUSTOMERS", raw.get("customers", []))
+        log.info("customers fetched", count=len(customers))
+        return customers
+
+
+    async def create_sales_order(self, payload: "SOPayload") -> "SOCreateResponse":
+        """Create a Sales Order via ZCREATE_SALESOR/SALESORDER_CREATE."""
+        from src.schemas.sap import SOCreateResponse
+        log.info("creating sales order", sales_org=payload.sales_org)
+        url = self._sap_url("ZCREATE_SALESOR/SALESORDER_CREATE")
+        raw: dict[str, Any] = await self._http_post(url, payload.model_dump())
+
+        sales_order = str(raw.get("SALES_ORDER") or "").strip()
+        return_msgs: list[dict] = raw.get("RETURN") or []
+
+        # Collect all error messages
+        errors   = [m.get("MESSAGE", "") for m in return_msgs if m.get("TYPE") == "E"]
+        successes = [m.get("MESSAGE", "") for m in return_msgs if m.get("TYPE") == "S"]
+
+        success = bool(sales_order) and not errors
+        message = "; ".join(errors) if errors else ("; ".join(successes) if successes else "")
+
+        log.info("SO create response", sales_order=sales_order, success=success, errors=errors)
+        return SOCreateResponse(
+            sales_order_number=sales_order,
+            success=success,
+            message=message,
+            sap_response=raw,
+        )
+
+    async def simulate_sales_order(self, payload: "SOPayload") -> "SOSimulateResponse":
+        """Simulate a Sales Order via ZDATA_HOLD/DATA_SIMULATE — puts order on hold."""
+        from src.schemas.sap import SOSimulateResponse
+        log.info("simulating sales order", sales_org=payload.sales_org)
+        url = self._sap_url("ZDATA_HOLD/DATA_SIMULATE")
+        raw: dict[str, Any] = await self._http_post(url, payload.model_dump())
+        message = str(raw.get("MESSAGE") or raw.get("message") or "")
+        status_val = str(raw.get("STATUS") or raw.get("status") or "").upper()
+        success = (
+            status_val in ("S", "SUCCESS", "OK", "TRUE", "1")
+            or "success" in message.lower()
+            or bool(raw.get("SALESDOCUMENT") or raw.get("sales_order"))
+        )
+        log.info("SO simulation response", status=status_val, success=success, message=message)
+        return SOSimulateResponse(success=success, message=message, sap_response=raw)
 
     async def post_fb60(self, payload: FB60Payload) -> FB60Response:
         """Post a Non-PO invoice to SAP FB60."""

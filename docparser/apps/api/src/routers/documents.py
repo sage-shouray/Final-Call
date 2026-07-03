@@ -636,3 +636,79 @@ async def post_fb60(
         status="posting",
         message="FB60 posting started.",
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/documents/{document_id}/so-simulate
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/{document_id}/so-simulate",
+    status_code=202,
+    summary="Simulate Sales Order via ZDATA_HOLD/DATA_SIMULATE",
+)
+async def so_simulate(
+    document_id: str,
+    body: dict,
+    current_user: CurrentUser,
+):
+    db = get_database()
+    doc = await DocumentRepository(db).find_by_document_id(document_id)
+    if not doc:
+        raise NotFoundError(f"Document {document_id} not found")
+
+    customer_id = body.get("customer_id") or ""
+    if not customer_id:
+        raise ValidationError("customer_id is required", error_code="MISSING_CUSTOMER_ID")
+
+    import asyncio as _asyncio
+    from src.workers.so_worker import run_so_simulate
+    _asyncio.create_task(
+        run_so_simulate(document_id, customer_id),
+        name=f"so-simulate-{document_id}",
+    )
+    log.info("SO simulation task started", document_id=document_id, customer_id=customer_id)
+
+    return {
+        "document_id": document_id,
+        "status": "simulating",
+        "message": "Sales Order simulation started.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /api/documents/{document_id}/so-create
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/{document_id}/so-create",
+    status_code=202,
+    summary="Create Sales Order via ZCREATE_SALESOR/SALESORDER_CREATE",
+)
+async def so_create(
+    document_id: str,
+    body: dict,
+    current_user: CurrentUser,
+):
+    db = get_database()
+    doc = await DocumentRepository(db).find_by_document_id(document_id)
+    if not doc:
+        raise NotFoundError(f"Document {document_id} not found")
+
+    customer_id = body.get("customer_id") or ""
+    if not customer_id:
+        raise ValidationError("customer_id is required", error_code="MISSING_CUSTOMER_ID")
+
+    import asyncio as _asyncio
+    from src.workers.so_worker import run_so_create
+    _asyncio.create_task(
+        run_so_create(document_id, customer_id),
+        name=f"so-create-{document_id}",
+    )
+    log.info("SO create task started", document_id=document_id, customer_id=customer_id)
+
+    return {
+        "document_id": document_id,
+        "status": "posting",
+        "message": "Sales Order creation started.",
+    }

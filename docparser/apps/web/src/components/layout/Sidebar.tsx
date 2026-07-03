@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Upload, History, Clock,
-  FileText, Landmark, FileCheck, Package, Truck,
+  FileText, ClipboardList, FileCheck, Package, Truck,
   Settings, BarChart2, ChevronLeft, ChevronRight,
   FileSpreadsheet,
 } from 'lucide-react';
@@ -140,7 +140,7 @@ export function Sidebar() {
       section: 'Document Types',
       items: [
         { label: 'Vendor Invoice',   to: '/upload?type=vendor_invoice',   icon: FileText },
-        { label: 'Bank Statement',   to: '/upload?type=bank_statement',   icon: Landmark,     comingSoon: true },
+        { label: 'Sales Order',      to: '/upload?type=sales_order',      icon: ClipboardList, comingSoon: false },
         { label: 'Payment Advice',   to: '/upload?type=payment_advice',   icon: FileCheck,    comingSoon: true },
         { label: 'Goods Receipt',    to: '/upload?type=goods_receipt',    icon: Package,      comingSoon: false },
         { label: 'Freight Invoice',  to: '/upload?type=freight_invoice',  icon: Truck,        comingSoon: true },

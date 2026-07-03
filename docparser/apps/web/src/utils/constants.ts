@@ -1,5 +1,5 @@
 import {
-  FileText, Landmark, FileCheck, Package, Truck,
+  FileText, ClipboardList, FileCheck, Package, Truck,
   type LucideIcon,
 } from 'lucide-react';
 import { DocumentStatus, DocumentType, TCode } from '@/types';
@@ -14,11 +14,11 @@ export interface DocTypeConfig {
 }
 
 export const DOC_TYPE_CONFIG: Record<DocumentType, DocTypeConfig> = {
-  [DocumentType.VENDOR_INVOICE]:  { label: 'Vendor Invoice',  tcode: TCode.MIRO, icon: FileText,  active: true  },
-  [DocumentType.BANK_STATEMENT]:  { label: 'Bank Statement',  tcode: TCode.FF67, icon: Landmark,  active: false },
-  [DocumentType.PAYMENT_ADVICE]:  { label: 'Payment Advice',  tcode: TCode.F28,  icon: FileCheck, active: false },
-  [DocumentType.GOODS_RECEIPT]:   { label: 'Goods Receipt',   tcode: TCode.MIGO, icon: Package,   active: true  },
-  [DocumentType.FREIGHT_INVOICE]: { label: 'Freight Invoice', tcode: TCode.MIRO, icon: Truck,     active: false },
+  [DocumentType.VENDOR_INVOICE]:  { label: 'Vendor Invoice',  tcode: TCode.MIRO, icon: FileText,       active: true  },
+  [DocumentType.SALES_ORDER]:     { label: 'Sales Order',     tcode: TCode.VA01, icon: ClipboardList,  active: true  },
+  [DocumentType.PAYMENT_ADVICE]:  { label: 'Payment Advice',  tcode: TCode.F28,  icon: FileCheck,      active: false },
+  [DocumentType.GOODS_RECEIPT]:   { label: 'Goods Receipt',   tcode: TCode.MIGO, icon: Package,        active: true  },
+  [DocumentType.FREIGHT_INVOICE]: { label: 'Freight Invoice', tcode: TCode.MIRO, icon: Truck,          active: true  },
 };
 
 export const DOC_TYPE_LABEL = Object.fromEntries(
@@ -51,7 +51,7 @@ export const STATUS_CONFIG: Record<DocumentStatus, StatusConfig> = {
 export const TCODE_LABEL: Record<TCode, string> = {
   [TCode.MIRO]: 'Invoice Verification',
   [TCode.FB60]: 'Non-PO Invoice',
-  [TCode.FF67]: 'Bank Statement',
+  [TCode.VA01]: 'Sales Order',
   [TCode.F28]:  'Payment Posting',
   [TCode.MIGO]: 'Goods Movement',
 };

@@ -17,7 +17,7 @@ export enum DocumentStatus {
 
 export enum DocumentType {
   VENDOR_INVOICE  = 'vendor_invoice',
-  BANK_STATEMENT  = 'bank_statement',
+  SALES_ORDER     = 'sales_order',
   PAYMENT_ADVICE  = 'payment_advice',
   GOODS_RECEIPT   = 'goods_receipt',
   FREIGHT_INVOICE = 'freight_invoice',
@@ -26,14 +26,16 @@ export enum DocumentType {
 export enum TCode {
   MIRO = 'MIRO',
   FB60 = 'FB60',
-  FF67 = 'FF67',
+  VA01 = 'VA01',
   F28  = 'F-28',
   MIGO = 'MIGO',
 }
 
 export enum InvoiceSubtype {
-  PO     = 'po',
-  NON_PO = 'non_po',
+  PO         = 'po',
+  SERVICE_PO = 'service_po',
+  FREIGHT_PO = 'freight_po',
+  NON_PO     = 'non_po',
 }
 
 export enum UserRole {
@@ -197,6 +199,8 @@ export interface Document {
   grn_posting:    GRNPosting | null;
   miro_posting:   MIROPosting | null;
   fb60_posting:   FB60Posting | null;
+  so_simulation:  Record<string, unknown> | null;
+  so_posting:     Record<string, unknown> | null;
   retry_count:    number;
   error_log:      ErrorEntry[];
   created_at:     string;

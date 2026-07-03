@@ -16,17 +16,17 @@ from src.models.base import TimestampedModel, _utcnow
 
 class DocumentType(StrEnum):
     VENDOR_INVOICE = "vendor_invoice"
-    BANK_STATEMENT = "bank_statement"
+    SALES_ORDER    = "sales_order"
     PAYMENT_ADVICE = "payment_advice"
-    GOODS_RECEIPT = "goods_receipt"
+    GOODS_RECEIPT  = "goods_receipt"
     FREIGHT_INVOICE = "freight_invoice"
 
 
 class TCode(StrEnum):
     MIRO = "MIRO"
     FB60 = "FB60"
-    FF67 = "FF67"
-    F28 = "F-28"
+    VA01 = "VA01"
+    F28  = "F-28"
     MIGO = "MIGO"
 
 
@@ -45,6 +45,8 @@ class DocumentStatus(StrEnum):
 
 class InvoiceSubtype(StrEnum):
     PO = "po"
+    SERVICE_PO = "service_po"
+    FREIGHT_PO = "freight_po"
     NON_PO = "non_po"
 
 
@@ -66,10 +68,10 @@ class GRNStatus(StrEnum):
 
 # Automatic tcode assignment per document type
 TCODE_MAP: dict[DocumentType, TCode] = {
-    DocumentType.VENDOR_INVOICE: TCode.MIRO,
-    DocumentType.BANK_STATEMENT: TCode.FF67,
-    DocumentType.PAYMENT_ADVICE: TCode.F28,
-    DocumentType.GOODS_RECEIPT: TCode.MIGO,
+    DocumentType.VENDOR_INVOICE:  TCode.MIRO,
+    DocumentType.SALES_ORDER:     TCode.VA01,
+    DocumentType.PAYMENT_ADVICE:  TCode.F28,
+    DocumentType.GOODS_RECEIPT:   TCode.MIGO,
     DocumentType.FREIGHT_INVOICE: TCode.MIRO,
 }
 
@@ -180,6 +182,21 @@ class MIROPosting(TimestampedModel.__bases__[0]):
     status: MIROStatus = MIROStatus.FAILED
 
 
+class SOSimulation(TimestampedModel.__bases__[0]):
+    simulated_at: datetime = Field(default_factory=_utcnow)
+    payload_sent: dict[str, Any] = Field(default_factory=dict)
+    sap_response: dict[str, Any] = Field(default_factory=dict)
+    status: str = "pending"
+
+
+class SOPosting(TimestampedModel.__bases__[0]):
+    posted_at: datetime = Field(default_factory=_utcnow)
+    payload_sent: dict[str, Any] = Field(default_factory=dict)
+    sales_order_number: str = ""
+    sap_response: dict[str, Any] = Field(default_factory=dict)
+    status: str = "failed"
+
+
 class FB60Posting(TimestampedModel.__bases__[0]):
     posted_at: datetime = Field(default_factory=_utcnow)
     payload_sent: dict[str, Any] = Field(default_factory=dict)
@@ -216,5 +233,7 @@ class Document(TimestampedModel):
     grn_posting: GRNPosting | None = None
     miro_posting: MIROPosting | None = None
     fb60_posting: FB60Posting | None = None
+    so_simulation: SOSimulation | None = None
+    so_posting: SOPosting | None = None
     retry_count: int = Field(default=0, ge=0)
     error_log: list[ErrorEntry] = Field(default_factory=list)

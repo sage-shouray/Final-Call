@@ -91,6 +91,40 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     log.info("Background workers started")
 
+    # Sync customers from SAP into MongoDB in background (non-blocking)
+    async def _sync_customers_background() -> None:
+        try:
+            from src.database import get_database
+            from src.routers.customers import _fetch_from_sap
+            from pymongo import UpdateOne
+            db = get_database()
+            collection = db["customers"]
+            count = await collection.count_documents({})
+            if count > 0:
+                log.info("Customer cache already populated", count=count)
+                return
+            log.info("Customer cache empty — syncing from SAP in background")
+            customers = await _fetch_from_sap()
+            batch: list = []
+            for c in customers:
+                cid = c.get("CUSTOMER")
+                if not cid:
+                    continue
+                batch.append(UpdateOne({"CUSTOMER": cid}, {"$set": c}, upsert=True))
+                if len(batch) >= 1000:
+                    await collection.bulk_write(batch, ordered=False)
+                    batch = []
+            if batch:
+                await collection.bulk_write(batch, ordered=False)
+            await collection.create_index([
+                ("CUSTOMER_NAME", "text"), ("CITY", "text"), ("CUSTOMER", "text")
+            ])
+            log.info("Customer sync complete", synced=len(customers))
+        except Exception as exc:
+            log.warning("Background customer sync failed", error=str(exc))
+
+    asyncio.create_task(_sync_customers_background(), name="customer-sync")
+
     yield
 
     # Graceful shutdown: cancel background tasks then close infra connections
@@ -177,10 +211,11 @@ app.add_middleware(
 # Routers
 # ---------------------------------------------------------------------------
 
-from src.routers import auth, dashboard, documents, health, websocket  # noqa: E402
+from src.routers import auth, customers, dashboard, documents, health, websocket  # noqa: E402
 
 app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
+app.include_router(customers.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(websocket.router, prefix="/api")
