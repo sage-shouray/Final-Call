@@ -14,6 +14,8 @@ const UploadPage         = lazy(() => import('@/pages/UploadPage'));
 const DocumentsPage      = lazy(() => import('@/pages/DocumentsPage'));
 const DocumentDetailPage = lazy(() => import('@/pages/DocumentDetailPage'));
 const NotFoundPage       = lazy(() => import('@/pages/NotFoundPage'));
+const SettingsPage       = lazy(() => import('@/pages/SettingsPage'));
+const ReportsPage        = lazy(() => import('@/pages/ReportsPage'));
 
 function PageFallback() {
   return (
@@ -25,6 +27,18 @@ function PageFallback() {
 
 function ProtectedRoute() {
   return <AppLayout />;
+}
+
+function defaultLandingPath(): string {
+  try {
+    const raw = localStorage.getItem('uvira-app-prefs');
+    if (raw) {
+      const prefs = JSON.parse(raw) as { defaultView?: string };
+      if (prefs.defaultView === 'documents') return '/documents';
+      if (prefs.defaultView === 'upload')    return '/upload';
+    }
+  } catch { /* ignore */ }
+  return '/dashboard';
 }
 
 function GuestRoute() {
@@ -42,7 +56,7 @@ const routes: RouteObject[] = [
   {
     element: <ProtectedRoute />,
     children: [
-      { index: true, element: <Navigate to="/dashboard" replace /> },
+      { index: true, element: <Navigate to={defaultLandingPath()} replace /> },
       {
         path: '/dashboard',
         element: (
@@ -72,6 +86,22 @@ const routes: RouteObject[] = [
         element: (
           <Suspense fallback={<PageFallback />}>
             <DocumentDetailPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/reports',
+        element: (
+          <Suspense fallback={<PageFallback />}>
+            <ReportsPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/settings',
+        element: (
+          <Suspense fallback={<PageFallback />}>
+            <SettingsPage />
           </Suspense>
         ),
       },

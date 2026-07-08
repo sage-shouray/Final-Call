@@ -6,6 +6,44 @@ import { router }      from './router';
 import { queryClient } from './lib/queryClient';
 import { useUIStore }  from './store/uiStore';
 
+const SETTINGS_KEY = 'uvira-app-prefs';
+
+function applyTheme(theme: string) {
+  const root = document.documentElement;
+  if (theme === 'dark') {
+    root.classList.add('dark');
+  } else if (theme === 'light') {
+    root.classList.remove('dark');
+  } else {
+    // system
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    root.classList.toggle('dark', prefersDark);
+  }
+}
+
+function applyStoredPrefs() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) { applyTheme('system'); return; }
+    const prefs = JSON.parse(raw) as { compactSidebar?: boolean; theme?: string };
+    applyTheme(prefs.theme ?? 'system');
+    if (prefs.compactSidebar) {
+      useUIStore.getState().setSidebarCollapsed(true);
+    }
+  } catch { /* ignore */ }
+}
+
+applyStoredPrefs();
+
+// Keep in sync if the OS theme changes while the tab is open
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    const prefs = raw ? JSON.parse(raw) as { theme?: string } : {};
+    if (!prefs.theme || prefs.theme === 'system') applyTheme('system');
+  } catch { /* ignore */ }
+});
+
 function KeyboardShortcuts() {
   const { toggleSidebar } = useUIStore();
 

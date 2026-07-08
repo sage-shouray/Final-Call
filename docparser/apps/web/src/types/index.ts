@@ -49,41 +49,121 @@ export enum UserRole {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface LineItem {
-  line_number:   string;
-  material_code: string;
-  description:   string;
-  quantity:      string;
-  uom:           string;
-  unit_rate:     string;
-  amount:        string;
-  tax_code:      string;
-  tax_amount:    string;
-  hsn_code:      string;
-  grn_reference: string;
+  line_number:    string;
+  material_code:  string;
+  hsn_code:       string;
+  description:    string;
+  quantity:       string;
+  uom:            string;
+  unit_rate:      string;
+  discount:       string;
+  taxable_amount: string;
+  cgst_rate:      string;
+  cgst_amount:    string;
+  sgst_rate:      string;
+  sgst_amount:    string;
+  igst_rate:      string;
+  igst_amount:    string;
+  cess_rate:      string;
+  cess_amount:    string;
+  tax_code:       string;
+  tax_amount:     string;
+  amount:         string;
+  grn_reference:  string;
 }
 
 export interface ExtractedData {
-  invoice_no:       string;
-  invoice_date:     string;
-  po_number:        string;
-  vendor_id:        string;
-  vendor_name:      string;
-  vendor_gstin:     string;
-  vendor_address:   string;
-  bill_to_name:     string;
-  bill_to_address:  string;
-  ship_to_name:     string;
-  ship_to_address:  string;
-  currency:         string;
-  gross_amount:     string;
-  tax_amount:       string;
-  net_amount:       string;
-  payment_terms:    string;
-  bank_details:     string;
-  reference_doc:    string;
-  confidence_score: number;
-  line_items:       LineItem[];
-  raw_ocr_response: Record<string, unknown>;
+  // Invoice header
+  invoice_no:               string;
+  invoice_date:             string;
+  due_date:                 string;
+  po_number:                string;
+  delivery_note:            string;
+  dispatch_doc_no:          string;
+  dispatched_through:       string;
+  destination:              string;
+  invoice_type:             string;
+  reverse_charge_applicable: string;
+  place_of_supply:          string;
+
+  // e-Invoice / e-Way Bill
+  irn_number:               string;
+  eway_bill_no:             string;
+  eway_bill_date:           string;
+  eway_bill_valid_upto:     string;
+
+  // Vendor
+  vendor_id:                string;
+  vendor_name:              string;
+  vendor_gstin:             string;
+  vendor_pan:               string;
+  vendor_address:           string;
+  vendor_state:             string;
+  vendor_state_code:        string;
+  vendor_email:             string;
+  vendor_phone:             string;
+
+  // Buyer / Bill-to
+  bill_to_name:             string;
+  bill_to_gstin:            string;
+  bill_to_address:          string;
+  bill_to_state:            string;
+  bill_to_state_code:       string;
+
+  // Ship-to
+  ship_to_name:             string;
+  ship_to_gstin:            string;
+  ship_to_address:          string;
+  ship_to_state:            string;
+  ship_to_state_code:       string;
+
+  // Financials
+  currency:                 string;
+  taxable_amount:           string;
+  cgst_rate:                string;
+  cgst_amount:              string;
+  sgst_rate:                string;
+  sgst_amount:              string;
+  igst_rate:                string;
+  igst_amount:              string;
+  cess_amount:              string;
+  tds_amount:               string;
+  tcs_amount:               string;
+  discount_amount:          string;
+  freight_charges:          string;
+  packing_charges:          string;
+  insurance_charges:        string;
+  other_charges:            string;
+  round_off:                string;
+  tax_amount:               string;
+  gross_amount:             string;
+  net_amount:               string;
+
+  // Payment & Bank
+  payment_terms:            string;
+  bank_name:                string;
+  bank_account_no:          string;
+  bank_ifsc:                string;
+  bank_branch:              string;
+  bank_details:             string;
+
+  // Transport / Logistics
+  vehicle_no:               string;
+  lr_no:                    string;
+  lr_date:                  string;
+  transport_name:           string;
+  mode_of_transport:        string;
+  terms_of_delivery:        string;
+
+  // Other
+  declaration:              string;
+  notes:                    string;
+  reference_doc:            string;
+
+  // AI metadata
+  confidence_score:         number;
+  line_items:               LineItem[];
+  raw_ocr_response:         Record<string, unknown>;
 }
 
 export interface MismatchEntry {

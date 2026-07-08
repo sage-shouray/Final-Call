@@ -35,9 +35,9 @@ interface AuditEntry {
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-2 border-b border-neutral-50 last:border-0">
-      <span className="shrink-0 text-xs text-neutral-500 min-w-[120px]">{label}</span>
-      <span className="text-right text-xs font-medium text-neutral-800">{value}</span>
+    <div className="flex items-start justify-between gap-4 py-2 border-b border-neutral-50 last:border-0 dark:border-neutral-800">
+      <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400 min-w-[120px]">{label}</span>
+      <span className="text-right text-xs font-medium text-neutral-800 dark:text-neutral-200">{value}</span>
     </div>
   );
 }
@@ -51,11 +51,11 @@ function Collapsible({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+    <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden dark:border-neutral-700 dark:bg-neutral-800">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-5 py-3.5 text-sm font-semibold text-neutral-800 hover:bg-neutral-50 transition-colors"
+        className="flex w-full items-center justify-between px-5 py-3.5 text-sm font-semibold text-neutral-800 hover:bg-neutral-50 transition-colors dark:text-neutral-200 dark:hover:bg-neutral-700"
       >
         {title}
         {open
@@ -63,7 +63,7 @@ function Collapsible({
           : <ChevronDown className="h-4 w-4 text-neutral-400" />
         }
       </button>
-      {open && <div className="border-t border-neutral-100 px-5 py-4">{children}</div>}
+      {open && <div className="border-t border-neutral-100 px-5 py-4 dark:border-neutral-700">{children}</div>}
     </div>
   );
 }

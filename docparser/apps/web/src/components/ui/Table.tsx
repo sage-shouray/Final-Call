@@ -16,7 +16,7 @@ export function Table({ className, children, ...rest }: HTMLAttributes<HTMLTable
 
 export function TableHead({ className, children, ...rest }: HTMLAttributes<HTMLTableSectionElement>) {
   return (
-    <thead className={cn('bg-neutral-50 border-b border-neutral-200', className)} {...rest}>
+    <thead className={cn('bg-neutral-50 border-b border-neutral-200 dark:bg-neutral-900 dark:border-neutral-700', className)} {...rest}>
       {children}
     </thead>
   );
@@ -25,7 +25,7 @@ export function TableHead({ className, children, ...rest }: HTMLAttributes<HTMLT
 export function TableBody({ className, children, ...rest }: HTMLAttributes<HTMLTableSectionElement>) {
   return (
     <tbody
-      className={cn('divide-y divide-neutral-100', className)}
+      className={cn('divide-y divide-neutral-100 dark:divide-neutral-800', className)}
       {...rest}
     >
       {children}
@@ -36,7 +36,7 @@ export function TableBody({ className, children, ...rest }: HTMLAttributes<HTMLT
 export function TableRow({ className, children, ...rest }: HTMLAttributes<HTMLTableRowElement>) {
   return (
     <tr
-      className={cn('transition-colors hover:bg-neutral-50/70', className)}
+      className={cn('transition-colors hover:bg-neutral-50/70 dark:hover:bg-neutral-800/60', className)}
       {...rest}
     >
       {children}
@@ -52,7 +52,7 @@ export function TableHeaderCell({
   return (
     <th
       className={cn(
-        'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500',
+        'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400',
         className,
       )}
       {...rest}
@@ -69,7 +69,7 @@ export function TableCell({
 }: TdHTMLAttributes<HTMLTableCellElement>) {
   return (
     <td
-      className={cn('px-4 py-3.5 text-neutral-700', className)}
+      className={cn('px-4 py-3.5 text-neutral-700 dark:text-neutral-300', className)}
       {...rest}
     >
       {children}

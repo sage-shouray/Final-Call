@@ -83,19 +83,19 @@ export function Modal({
       <div
         ref={panelRef}
         className={cn(
-          'relative z-10 w-full rounded-2xl bg-white shadow-2xl ring-1 ring-neutral-200/50',
+          'relative z-10 w-full rounded-2xl bg-white shadow-2xl ring-1 ring-neutral-200/50 dark:bg-neutral-800 dark:ring-neutral-700/50',
           'flex flex-col max-h-[90vh]',
           sizeMap[size],
           className,
         )}
       >
         {title && (
-          <div className="flex shrink-0 items-center justify-between px-6 py-4 border-b border-neutral-100">
-            <h2 className="text-base font-semibold text-neutral-900">{title}</h2>
+          <div className="flex shrink-0 items-center justify-between px-6 py-4 border-b border-neutral-100 dark:border-neutral-700">
+            <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{title}</h2>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 transition-colors"
+              className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 transition-colors dark:hover:bg-neutral-700 dark:hover:text-neutral-300"
               aria-label="Close"
             >
               <X className="h-4 w-4" />
@@ -106,7 +106,7 @@ export function Modal({
         <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
 
         {footer && (
-          <div className="shrink-0 flex items-center justify-end gap-2 border-t border-neutral-100 px-6 py-4 bg-neutral-50/50 rounded-b-2xl">
+          <div className="shrink-0 flex items-center justify-end gap-2 border-t border-neutral-100 px-6 py-4 bg-neutral-50/50 rounded-b-2xl dark:border-neutral-700 dark:bg-neutral-900/50">
             {footer}
           </div>
         )}

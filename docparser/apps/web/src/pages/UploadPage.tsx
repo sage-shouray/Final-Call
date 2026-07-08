@@ -102,15 +102,15 @@ function stepToIndex(step: WizardStep, isMigo: boolean): number {
 
 function stepToTabTitle(step: WizardStep): string {
   const labels: Record<WizardStep, string> = {
-    upload:     'Step 1 - Upload · DocParser',
-    extracting: 'Step 2 - Extracting · DocParser',
-    extracted:  'Step 3 - Review · DocParser',
-    gr_posting: 'Step 3 - Posting GR · DocParser',
-    gr_posted:  'Step 4 - GR Posted · DocParser',
-    validating: 'Step 4 - Validating · DocParser',
-    validated:  'Step 4 - Review Validation · DocParser',
-    posting:    'Step 5 - Posting · DocParser',
-    complete:   'Complete · DocParser',
+    upload:     'Step 1 - Upload · Uvira.ai',
+    extracting: 'Step 2 - Extracting · Uvira.ai',
+    extracted:  'Step 3 - Review · Uvira.ai',
+    gr_posting: 'Step 3 - Posting GR · Uvira.ai',
+    gr_posted:  'Step 4 - GR Posted · Uvira.ai',
+    validating: 'Step 4 - Validating · Uvira.ai',
+    validated:  'Step 4 - Review Validation · Uvira.ai',
+    posting:    'Step 5 - Posting · Uvira.ai',
+    complete:   'Complete · Uvira.ai',
   };
   return labels[step];
 }
@@ -120,14 +120,14 @@ function stepToTabTitle(step: WizardStep): string {
 function ExtractionSkeleton({ fileName, fileSize }: { fileName: string; fileSize: number }) {
   const kb = (fileSize / 1024).toFixed(1);
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white">
-      <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3.5">
+    <div className="rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+      <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3.5 dark:border-neutral-700">
         <div>
-          <h3 className="text-sm font-semibold text-neutral-800">Gemini AI · OCR Extraction</h3>
+          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Gemini AI · OCR Extraction</h3>
           <p className="mt-0.5 text-xs text-neutral-400">Usually takes 8–15 seconds</p>
         </div>
         <div className="text-right">
-          <p className="text-xs font-medium text-neutral-600 truncate max-w-[160px]">{fileName}</p>
+          <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400 truncate max-w-[160px]">{fileName}</p>
           <p className="text-xs text-neutral-400">{kb} KB</p>
         </div>
       </div>
@@ -171,7 +171,7 @@ export default function UploadPage() {
   // Tab title
   useEffect(() => {
     document.title = stepToTabTitle(state.step);
-    return () => { document.title = 'DocParser'; };
+    return () => { document.title = 'Uvira.ai'; };
   }, [state.step]);
 
   // Warn on navigation away mid-flow
@@ -402,16 +402,18 @@ export default function UploadPage() {
         }
       />
 
-      <div className="mx-auto max-w-3xl space-y-6 p-6">
+      <div className="space-y-6 p-6">
 
         {/* Step indicator */}
-        <StepIndicator steps={isMigo ? MIGO_STEPS : MIRO_STEPS} currentStep={stepToIndex(state.step, isMigo)} />
+        <div className="mx-auto max-w-3xl">
+          <StepIndicator steps={isMigo ? MIGO_STEPS : MIRO_STEPS} currentStep={stepToIndex(state.step, isMigo)} />
+        </div>
 
         {/* ── Step 1: Upload ─────────────────────────────────────────────── */}
         {state.step === 'upload' && (
-          <div className="space-y-5">
-            <div className="rounded-xl border border-neutral-200 bg-white p-5 space-y-4">
-              <h2 className="text-sm font-semibold text-neutral-800">Select Document Type</h2>
+          <div className="mx-auto max-w-3xl space-y-5">
+            <div className="rounded-xl border border-neutral-200 bg-white p-5 space-y-4 dark:border-neutral-700 dark:bg-neutral-900">
+              <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Select Document Type</h2>
               <DocTypePicker
                 value={state.selectedType}
                 onChange={(type) => setState((s) => ({
@@ -425,8 +427,8 @@ export default function UploadPage() {
 
             {/* Invoice sub-type selector — only for Vendor Invoice (not Freight Invoice, which auto-routes) */}
             {isVendorInv && (
-              <div className="rounded-xl border border-neutral-200 bg-white p-5 space-y-4">
-                <h2 className="text-sm font-semibold text-neutral-800">Invoice Type</h2>
+              <div className="rounded-xl border border-neutral-200 bg-white p-5 space-y-4 dark:border-neutral-700 dark:bg-neutral-900">
+                <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Invoice Type</h2>
 
                 {/* Level 1: PO / Non-PO */}
                 <div className="grid grid-cols-2 gap-3">
@@ -444,14 +446,14 @@ export default function UploadPage() {
                       }))}
                       className={`rounded-xl border-2 p-4 text-left transition-all ${
                         state.parentInvoiceType === opt.value
-                          ? 'border-primary-500 bg-primary-50'
-                          : 'border-neutral-200 bg-white hover:border-neutral-300'
+                          ? 'border-primary-500 bg-primary-50 dark:bg-indigo-950/50 dark:border-indigo-500'
+                          : 'border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:border-neutral-500'
                       }`}
                     >
-                      <p className={`text-sm font-semibold ${state.parentInvoiceType === opt.value ? 'text-primary-700' : 'text-neutral-800'}`}>
+                      <p className={`text-sm font-semibold ${state.parentInvoiceType === opt.value ? 'text-primary-700 dark:text-indigo-300' : 'text-neutral-800 dark:text-neutral-200'}`}>
                         {opt.label}
                       </p>
-                      <p className="mt-1 text-xs text-neutral-500">{opt.desc}</p>
+                      <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{opt.desc}</p>
                     </button>
                   ))}
                 </div>
@@ -459,7 +461,7 @@ export default function UploadPage() {
                 {/* Level 2: Material PO / Service PO — only when PO selected */}
                 {state.parentInvoiceType === 'po' && (
                   <div>
-                    <p className="mb-2 text-xs text-neutral-500 font-medium">Select PO type:</p>
+                    <p className="mb-2 text-xs text-neutral-500 font-medium dark:text-neutral-400">Select PO type:</p>
                     <div className="grid grid-cols-2 gap-3">
                       {([
                         { value: InvoiceSubtype.PO,         label: 'Material PO', desc: 'Physical goods — GR (MIGO) then invoice (MIRO)' },
@@ -471,11 +473,11 @@ export default function UploadPage() {
                           onClick={() => setState(s => ({ ...s, invoiceSubtype: opt.value }))}
                           className={`rounded-xl border-2 p-4 text-left transition-all ${
                             state.invoiceSubtype === opt.value
-                              ? 'border-indigo-500 bg-indigo-50'
-                              : 'border-neutral-200 bg-white hover:border-neutral-300'
+                              ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/50 dark:border-indigo-500'
+                              : 'border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:border-neutral-500'
                           }`}
                         >
-                          <p className={`text-sm font-semibold ${state.invoiceSubtype === opt.value ? 'text-indigo-700' : 'text-neutral-800'}`}>
+                          <p className={`text-sm font-semibold ${state.invoiceSubtype === opt.value ? 'text-indigo-700 dark:text-indigo-300' : 'text-neutral-800 dark:text-neutral-200'}`}>
                             {opt.label}
                           </p>
                           <p className="mt-1 text-xs text-neutral-500">{opt.desc}</p>
@@ -487,8 +489,8 @@ export default function UploadPage() {
               </div>
             )}
 
-            <div className={`rounded-xl border border-neutral-200 bg-white p-5 space-y-3 ${needsSubtype ? 'opacity-40 pointer-events-none' : ''}`}>
-              <h2 className="text-sm font-semibold text-neutral-800">Upload File</h2>
+            <div className={`rounded-xl border border-neutral-200 bg-white p-5 space-y-3 dark:border-neutral-700 dark:bg-neutral-900 ${needsSubtype ? 'opacity-40 pointer-events-none' : ''}`}>
+              <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Upload File</h2>
               {needsSubtype && (
                 <p className="text-xs text-amber-600">Please select an invoice type above first.</p>
               )}
@@ -506,10 +508,12 @@ export default function UploadPage() {
 
         {/* ── Step 2: Extracting ─────────────────────────────────────────── */}
         {state.step === 'extracting' && state.file && (
-          <ExtractionSkeleton
-            fileName={state.file.name}
-            fileSize={state.file.size}
-          />
+          <div className="mx-auto max-w-3xl">
+            <ExtractionSkeleton
+              fileName={state.file.name}
+              fileSize={state.file.size}
+            />
+          </div>
         )}
 
         {/* ── Service PO / Freight Invoice flow: validate → MIRO ───────── */}
@@ -530,7 +534,7 @@ export default function UploadPage() {
           </div>
         )}
         {(isServicePO || isFreightInv) && state.step === 'validating' && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-8">
+          <div className="rounded-xl border border-neutral-200 bg-white p-8 dark:border-neutral-700 dark:bg-neutral-900">
             <ValidationLoading />
           </div>
         )}
@@ -556,13 +560,13 @@ export default function UploadPage() {
           </div>
         )}
         {isSalesOrder && state.step === 'validating' && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-8">
+          <div className="rounded-xl border border-neutral-200 bg-white p-8 dark:border-neutral-700 dark:bg-neutral-900">
             <div className="flex flex-col items-center gap-3 text-center">
-              <div className="h-10 w-10 rounded-full bg-violet-100 flex items-center justify-center">
+              <div className="h-10 w-10 rounded-full bg-violet-100 flex items-center justify-center dark:bg-violet-900/40">
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
               </div>
-              <p className="text-sm font-semibold text-neutral-800">Simulating Sales Order…</p>
-              <p className="text-xs text-neutral-400">Sending to SAP ZDATA_HOLD/DATA_SIMULATE</p>
+              <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Simulating Sales Order…</p>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500">Sending to SAP ZDATA_HOLD/DATA_SIMULATE</p>
             </div>
           </div>
         )}
@@ -618,13 +622,13 @@ export default function UploadPage() {
 
         {/* ── Sales Order: posting spinner ───────────────────────────────── */}
         {isSalesOrder && state.step === 'posting' && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-8">
+          <div className="rounded-xl border border-neutral-200 bg-white p-8 dark:border-neutral-700 dark:bg-neutral-900">
             <div className="flex flex-col items-center gap-3 text-center">
-              <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+              <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center dark:bg-indigo-900/40">
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
               </div>
-              <p className="text-sm font-semibold text-neutral-800">Creating Sales Order in SAP…</p>
-              <p className="text-xs text-neutral-400">Sending to ZCREATE_SALESOR/SALESORDER_CREATE</p>
+              <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Creating Sales Order in SAP…</p>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500">Sending to ZCREATE_SALESOR/SALESORDER_CREATE</p>
             </div>
           </div>
         )}
@@ -685,7 +689,7 @@ export default function UploadPage() {
           />
         )}
         {!isMigo && !isNonPO && !isServicePO && !isFreightInv && !isSalesOrder && state.step === 'validating' && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-8">
+          <div className="rounded-xl border border-neutral-200 bg-white p-8 dark:border-neutral-700 dark:bg-neutral-900">
             <ValidationLoading />
           </div>
         )}
@@ -721,10 +725,10 @@ export default function UploadPage() {
 
         {/* ── MIGO flow: Step 3 Post GR ──────────────────────────────────── */}
         {isMigo && state.step === 'extracted' && state.editedData && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-6 space-y-4">
+          <div className="rounded-xl border border-neutral-200 bg-white p-6 space-y-4 dark:border-neutral-700 dark:bg-neutral-900">
             <div>
-              <h2 className="text-sm font-semibold text-neutral-800">Extracted Data Ready</h2>
-              <p className="mt-1 text-xs text-neutral-500">Review the extracted fields below, then post the Goods Receipt to SAP.</p>
+              <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Extracted Data Ready</h2>
+              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Review the extracted fields below, then post the Goods Receipt to SAP.</p>
             </div>
             <ExtractedDataForm
               data={state.editedData}
@@ -736,46 +740,46 @@ export default function UploadPage() {
           </div>
         )}
         {isMigo && state.step === 'gr_posting' && (
-          <div className="rounded-xl border border-teal-200 bg-teal-50 p-8 flex flex-col items-center gap-3">
+          <div className="rounded-xl border border-teal-200 bg-teal-50 p-8 flex flex-col items-center gap-3 dark:border-teal-800 dark:bg-teal-950/30">
             <div className="h-8 w-8 rounded-full border-2 border-teal-400 border-t-transparent animate-spin" />
-            <p className="text-sm font-medium text-teal-800">Posting Goods Receipt to SAP…</p>
-            <p className="text-xs text-teal-600">This may take up to 60 seconds</p>
+            <p className="text-sm font-medium text-teal-800 dark:text-teal-300">Posting Goods Receipt to SAP…</p>
+            <p className="text-xs text-teal-600 dark:text-teal-500">This may take up to 60 seconds</p>
           </div>
         )}
         {isMigo && state.step === 'gr_posted' && doc?.grn_posting && (
           <div className="space-y-4">
             {/* GRN result table */}
             <div className="rounded-xl border border-teal-200 overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-4 bg-teal-50">
+              <div className="flex items-center justify-between px-5 py-4 bg-teal-50 dark:bg-teal-950/40">
                 <div>
-                  <p className="text-sm font-semibold text-teal-900">
+                  <p className="text-sm font-semibold text-teal-900 dark:text-teal-200">
                     {doc.grn_posting.already_done
                       ? 'MIGO Already Done — GR Previously Posted'
                       : 'Goods Receipt Posted Successfully'}
                   </p>
-                  <p className="text-xs text-teal-600">
+                  <p className="text-xs text-teal-600 dark:text-teal-400">
                     {doc.grn_posting.already_done
                       ? 'Quantities already received in SAP — you can proceed to post the invoice'
                       : String(doc.grn_posting.posted_at ?? '')}
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-teal-500">GRN Number</p>
-                  <p className="font-mono text-xl font-bold text-teal-900">{doc.grn_posting.grn_number}</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-teal-500 dark:text-teal-400">GRN Number</p>
+                  <p className="font-mono text-xl font-bold text-teal-900 dark:text-teal-200">{doc.grn_posting.grn_number}</p>
                 </div>
               </div>
               {Array.isArray((doc.grn_posting.payload_sent as Record<string, unknown>)?.po_items) && (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-teal-100/60">
+                    <thead className="bg-teal-100/60 dark:bg-teal-900/30">
                       <tr>
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700">PO Item</th>
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700">Material</th>
-                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-teal-700">Quantity</th>
-                        <th className="px-4 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-teal-700">Status</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-400">PO Item</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-400">Material</th>
+                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-400">Quantity</th>
+                        <th className="px-4 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-400">Status</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-teal-100 bg-white">
+                    <tbody className="divide-y divide-teal-100 bg-white dark:divide-teal-900 dark:bg-neutral-900">
                       {((doc.grn_posting.payload_sent as Record<string, unknown>).po_items as { po_item: string; material: string; quantity: string }[]).map((item, idx) => (
                         <tr key={idx}>
                           <td className="px-4 py-3 font-mono text-xs text-neutral-700">{item.po_item}</td>

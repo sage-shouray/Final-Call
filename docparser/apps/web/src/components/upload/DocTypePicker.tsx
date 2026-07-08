@@ -15,7 +15,7 @@ interface DocTypeOption {
 const OPTIONS: DocTypeOption[] = [
   { type: DocumentType.VENDOR_INVOICE,  label: 'Vendor Invoice',  tcode: TCode.MIRO, icon: FileText,  active: true,  tcodeLabel: 'PO / Non-PO' },
   { type: DocumentType.SALES_ORDER,     label: 'Sales Order',     tcode: TCode.VA01, icon: ClipboardList, active: true  },
-  { type: DocumentType.PAYMENT_ADVICE,  label: 'Payment Advice',  tcode: TCode.F28,  icon: FileCheck, active: false },
+  { type: DocumentType.PAYMENT_ADVICE,  label: 'Payment Advice',  tcode: TCode.F28,  icon: FileCheck, active: true  },
   { type: DocumentType.GOODS_RECEIPT,   label: 'Goods Receipt',   tcode: TCode.MIGO, icon: Package,   active: true  },
   { type: DocumentType.FREIGHT_INVOICE, label: 'Freight Invoice', tcode: TCode.MIRO, icon: Truck,     active: true  },
 ];
@@ -89,18 +89,18 @@ export function DocTypePicker({ value, onChange }: DocTypePickerProps) {
               'relative flex flex-col items-center gap-2.5 rounded-xl border-2 p-4 text-center',
               'transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2',
               selected
-                ? 'border-indigo-500 bg-indigo-50/60'
-                : 'border-neutral-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/30',
+                ? 'border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/60'
+                : 'border-neutral-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/30 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/30',
             )}
           >
             <div className={cn(
               'flex h-[38px] w-[38px] items-center justify-center rounded-lg transition-colors duration-150',
-              selected ? 'bg-indigo-100' : 'bg-neutral-100',
+              selected ? 'bg-indigo-100 dark:bg-indigo-900' : 'bg-neutral-100 dark:bg-neutral-700',
             )}>
               <Icon className={cn('h-5 w-5 transition-colors duration-150', selected ? 'text-indigo-600' : 'text-neutral-400')} />
             </div>
             <div>
-              <p className={cn('text-xs font-semibold', selected ? 'text-indigo-700' : 'text-neutral-700')}>
+              <p className={cn('text-xs font-semibold', selected ? 'text-indigo-700 dark:text-indigo-300' : 'text-neutral-700 dark:text-neutral-300')}>
                 {opt.label}
               </p>
               <p className="mt-0.5 font-mono text-[10px] text-neutral-400">{opt.tcodeLabel ?? opt.tcode}</p>

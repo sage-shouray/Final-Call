@@ -8,10 +8,10 @@ interface TopbarProps {
 
 export function Topbar({ title, subtitle, children }: TopbarProps) {
   return (
-    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between border-b border-neutral-200 bg-white px-6">
+    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between border-b border-neutral-200 bg-white px-6 dark:border-neutral-700 dark:bg-neutral-900">
       <div className="min-w-0">
         <h1
-          className="truncate font-display text-[17px] font-semibold leading-tight text-neutral-900"
+          className="truncate font-display text-[17px] font-semibold leading-tight text-neutral-900 dark:text-neutral-100"
           style={{ fontFamily: 'var(--ff-display)' }}
         >
           {title}

@@ -148,25 +148,37 @@ class SAPService:
         return max(0, int(60 - elapsed))
 
     async def _http_get_with_body(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
-        """GET request with JSON body — required by zpo_grn/Detail API."""
-        import json as _json
+        """POST request used to fetch PO data — SAP zpo_grn/Detail requires JSON body."""
+        import httpx
         t0 = time.perf_counter()
-        try:
-            async with aiohttp.ClientSession(timeout=self._timeout) as session:
-                async with session.get(
+        auth = (
+            (settings.SAP_USERNAME, settings.SAP_PASSWORD.get_secret_value())
+            if settings.SAP_USERNAME
+            else None
+        )
+        log.info("SAP PO fetch payload", url=url, payload=payload)
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=30.0, read=float(settings.SAP_TIMEOUT_SECONDS), write=30.0, pool=30.0),
+            auth=auth,
+        ) as client:
+            try:
+                resp = await client.post(
                     url,
-                    data=_json.dumps(payload),
-                    headers={"Content-Type": "application/json"},
-                ) as resp:
-                    duration_ms = int((time.perf_counter() - t0) * 1000)
-                    log.info("SAP GET request", url=url, status_code=resp.status, duration_ms=duration_ms)
-                    resp.raise_for_status()
-                    return await resp.json(content_type=None)
-        except aiohttp.ClientResponseError as exc:
-            log.warning("SAP HTTP error", url=url, status=exc.status, message=exc.message)
-            raise SAPConnectionError(
-                f"SAP returned HTTP {exc.status}: {exc.message}", status_code=502
-            ) from exc
+                    json=payload,
+                    headers={"Content-Type": "application/json", "Accept": "application/json"},
+                )
+                duration_ms = int((time.perf_counter() - t0) * 1000)
+                log.info("SAP PO fetch response", url=url, status_code=resp.status_code, duration_ms=duration_ms, body=resp.text[:500])
+                resp.raise_for_status()
+                return resp.json()
+            except httpx.HTTPStatusError as exc:
+                log.warning("SAP HTTP error", url=url, status=exc.response.status_code, body=exc.response.text[:300])
+                raise SAPConnectionError(
+                    f"SAP returned HTTP {exc.response.status_code}: {exc.response.text[:200]}",
+                    status_code=502,
+                ) from exc
+            except httpx.TimeoutException as exc:
+                raise SAPConnectionError(f"SAP PO fetch timed out", status_code=504) from exc
 
     async def _http_get(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
         """Single raw HTTP GET — no retry or circuit logic here."""
@@ -250,18 +262,32 @@ class SAPService:
                     status_code=504,
                 ) from exc
 
+    @staticmethod
+    def _clean_po_number(po_number: str) -> str:
+        """Strip whitespace only — SAP PO numbers are always 10 digits as-is."""
+        return po_number.strip()
+
     async def _fetch_po_raw(self, po_number: str) -> dict[str, Any]:
         """Retry-wrapped PO fetch — GET with PO number in JSON body."""
         url = self._sap_url("zpo_grn/Detail")
-        import json as _json
+        po_clean = self._clean_po_number(po_number)
+        log.info("fetching PO from SAP", po_number=po_clean)
+        import httpx as _httpx
         async for attempt in AsyncRetrying(
             wait=wait_exponential(multiplier=1, min=2, max=10),
             stop=stop_after_attempt(3),
-            retry=retry_if_exception_type(aiohttp.ClientError),
+            retry=retry_if_exception_type(_httpx.TransportError),
             reraise=True,
         ):
             with attempt:
-                return await self._http_get_with_body(url, {"PO": po_number})
+                raw = await self._http_get_with_body(url, {"PO": po_clean})
+                # SAP returns {"MESSAGE": "Invalid PO / Vendor"} when PO not found
+                if isinstance(raw, dict) and not raw.get("PO_NUMBER") and raw.get("MESSAGE"):
+                    raise SAPConnectionError(
+                        f"SAP PO lookup failed: {raw['MESSAGE']}",
+                        status_code=404,
+                    )
+                return raw
         raise SAPConnectionError("PO fetch failed after all retries")  # unreachable
 
     async def _post_miro_raw(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -315,7 +341,6 @@ class SAPService:
 
     async def fetch_po_details(self, po_number: str) -> SAPPOResponse:
         """Fetch PO + GRN details from SAP."""
-        log.info("fetching PO from SAP", po_number=po_number)
         raw: dict[str, Any] = await self._fetch_po_raw(po_number)
 
         from src.schemas.sap import SAPGRNDetail, SAPPOLineItem
@@ -425,17 +450,24 @@ class SAPService:
 
     async def fetch_service_po_details(self, po_number: str) -> SAPServicePOResponse:
         """Fetch Service PO + SES details from SAP zspodetail/Detail."""
-        log.info("fetching Service PO from SAP", po_number=po_number)
+        po_clean = self._clean_po_number(po_number)
+        log.info("fetching Service PO from SAP", po_number=po_clean)
         url = self._sap_url("zspodetail/Detail")
 
+        import httpx as _httpx
         async for attempt in AsyncRetrying(
             wait=wait_exponential(multiplier=1, min=2, max=10),
             stop=stop_after_attempt(3),
-            retry=retry_if_exception_type(aiohttp.ClientError),
+            retry=retry_if_exception_type(_httpx.TransportError),
             reraise=True,
         ):
             with attempt:
-                raw = await self._http_get_with_body(url, {"PO": po_number})
+                raw = await self._http_get_with_body(url, {"PO": po_clean})
+                if isinstance(raw, dict) and not raw.get("PO_NUMBER") and raw.get("MESSAGE"):
+                    raise SAPConnectionError(
+                        f"SAP PO lookup failed: {raw['MESSAGE']}",
+                        status_code=404,
+                    )
 
         line_items: list[SAPServicePOLineItem] = []
         for item in raw.get("PO_LINE_ITEMS", []):

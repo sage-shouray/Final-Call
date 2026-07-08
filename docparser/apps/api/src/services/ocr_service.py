@@ -44,10 +44,12 @@ _GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 _CONFIDENCE_FIELDS = (
     "invoice_no",
     "invoice_date",
-    "po_number",
     "vendor_name",
     "vendor_gstin",
     "gross_amount",
+    "taxable_amount",
+    "cgst_amount",
+    "sgst_amount",
 )
 
 # ---------------------------------------------------------------------------
@@ -55,8 +57,8 @@ _CONFIDENCE_FIELDS = (
 # ---------------------------------------------------------------------------
 
 _EXTRACTION_PROMPT = """
-You are a highly accurate document parser specialised in vendor invoices and purchase orders.
-Analyse the document image and extract the following fields.
+You are a highly accurate document parser specialised in Indian GST tax invoices, vendor invoices, purchase orders, and commercial documents.
+Carefully analyse every part of the document and extract ALL visible fields listed below.
 
 Return ONLY valid JSON — no markdown, no explanations, no code fences.
 Return null for any field that is not present or cannot be determined with confidence. Never guess.
@@ -65,45 +67,124 @@ Required JSON structure:
 {
   "invoice_no": "string or null",
   "invoice_date": "DD-MM-YYYY or null",
+  "due_date": "DD-MM-YYYY or null",
   "po_number": "string or null",
+  "delivery_note": "string or null",
+  "dispatch_doc_no": "string or null",
+  "dispatched_through": "string or null",
+  "destination": "string or null",
+
   "vendor_id": "string or null",
   "vendor_name": "string or null",
   "vendor_gstin": "string or null",
+  "vendor_pan": "string or null",
   "vendor_address": "string or null",
+  "vendor_state": "string or null",
+  "vendor_state_code": "string or null",
+  "vendor_email": "string or null",
+  "vendor_phone": "string or null",
+
   "bill_to_name": "string or null",
+  "bill_to_gstin": "string or null",
   "bill_to_address": "string or null",
+  "bill_to_state": "string or null",
+  "bill_to_state_code": "string or null",
+
   "ship_to_name": "string or null",
+  "ship_to_gstin": "string or null",
   "ship_to_address": "string or null",
+  "ship_to_state": "string or null",
+  "ship_to_state_code": "string or null",
+
+  "place_of_supply": "string or null",
+  "reverse_charge_applicable": "Yes or No or null",
+  "invoice_type": "Tax Invoice or Bill of Supply or Credit Note or Debit Note or null",
+
+  "irn_number": "string or null",
+  "eway_bill_no": "string or null",
+  "eway_bill_date": "DD-MM-YYYY or null",
+  "eway_bill_valid_upto": "DD-MM-YYYY or null",
+
   "currency": "INR",
-  "gross_amount": number_or_null,
+  "taxable_amount": number_or_null,
+  "cgst_rate": number_or_null,
+  "cgst_amount": number_or_null,
+  "sgst_rate": number_or_null,
+  "sgst_amount": number_or_null,
+  "igst_rate": number_or_null,
+  "igst_amount": number_or_null,
+  "cess_amount": number_or_null,
+  "tds_amount": number_or_null,
+  "tcs_amount": number_or_null,
+  "discount_amount": number_or_null,
+  "freight_charges": number_or_null,
+  "packing_charges": number_or_null,
+  "insurance_charges": number_or_null,
+  "other_charges": number_or_null,
+  "round_off": number_or_null,
   "tax_amount": number_or_null,
+  "gross_amount": number_or_null,
   "net_amount": number_or_null,
+
   "payment_terms": "string or null",
+  "bank_name": "string or null",
+  "bank_account_no": "string or null",
+  "bank_ifsc": "string or null",
+  "bank_branch": "string or null",
   "bank_details": "string or null",
+
+  "vehicle_no": "string or null",
+  "lr_no": "string or null",
+  "lr_date": "DD-MM-YYYY or null",
+  "transport_name": "string or null",
+  "mode_of_transport": "string or null",
+  "terms_of_delivery": "string or null",
+  "declaration": "string or null",
+  "notes": "string or null",
+
   "line_items": [
     {
       "line_number": "00010",
       "material_code": "string or null",
+      "hsn_code": "string or null",
       "description": "string or null",
       "quantity": number_or_null,
       "uom": "string or null",
       "unit_rate": number_or_null,
-      "amount": number_or_null,
+      "discount": number_or_null,
+      "taxable_amount": number_or_null,
+      "cgst_rate": number_or_null,
+      "cgst_amount": number_or_null,
+      "sgst_rate": number_or_null,
+      "sgst_amount": number_or_null,
+      "igst_rate": number_or_null,
+      "igst_amount": number_or_null,
+      "cess_rate": number_or_null,
+      "cess_amount": number_or_null,
       "tax_code": "string or null",
       "tax_amount": number_or_null,
-      "hsn_code": "string or null"
+      "amount": number_or_null
     }
   ]
 }
 
 Extraction rules:
 - Dates: always normalise to DD-MM-YYYY format (e.g. 15-03-2026)
-- Amounts: return as plain numbers without currency symbols, commas, or spaces
-  (e.g. 125000.50 not "₹1,25,000.50")
+- Amounts: return as plain numbers without currency symbols, commas, or spaces (e.g. 125000.50 not "₹1,25,000.50")
 - line_number: 5-digit zero-padded integers incremented by 10 (00010, 00020, 00030...)
 - If no line items are present, return an empty array []
 - currency: default to "INR" if not explicitly stated
-- vendor_gstin: 15-character GST identification number
+- vendor_gstin / bill_to_gstin: 15-character alphanumeric GST Identification Number
+- igst_amount: extract only if IGST is separately shown; otherwise null
+- cgst_amount + sgst_amount: extract when intra-state GST is shown
+- taxable_amount: the pre-tax subtotal before any GST
+- gross_amount: the final payable amount (after all taxes and adjustments)
+- net_amount: same as gross_amount when no deductions; else amount after TDS/TCS
+- irn_number: Invoice Reference Number (e-invoice, 64-char hex string)
+- eway_bill_no: 12-digit EWB number
+- Capture bank name, account number, IFSC, and branch separately if shown
+- Extract the declaration or terms & conditions text in the "declaration" field
+- For vehicle/transport details fill vehicle_no, lr_no, transport_name etc.
 """.strip()
 
 # ---------------------------------------------------------------------------
@@ -178,7 +259,7 @@ async def _call_gemini_api(image_bytes: bytes, mime_type: str = "image/jpeg") ->
             "temperature": 0.1,
             "topP": 0.95,
             "topK": 40,
-            "maxOutputTokens": 4096,
+            "maxOutputTokens": 8192,
             "response_mime_type": "application/json",
         },
     }
@@ -252,19 +333,29 @@ def _normalise_line_items(raw_items: list[Any]) -> list[dict[str, Any]]:
             continue
         line_num = item.get("line_number")
         if not line_num:
-            line_num = f"{(idx + 1) * 10:05d}"  # auto-assign 00010, 00020 …
+            line_num = f"{(idx + 1) * 10:05d}"
         items.append({
-            "line_number": str(line_num),
-            "material_code": item.get("material_code") or "",
-            "description": item.get("description") or "",
-            "quantity": _safe_decimal(item.get("quantity")),
-            "uom": item.get("uom") or "",
-            "unit_rate": _safe_decimal(item.get("unit_rate")),
-            "amount": _safe_decimal(item.get("amount")),
-            "tax_code": item.get("tax_code") or "",
-            "tax_amount": _safe_decimal(item.get("tax_amount")),
-            "hsn_code": item.get("hsn_code") or "",
-            "grn_reference": "",
+            "line_number":    str(line_num),
+            "material_code":  item.get("material_code") or "",
+            "hsn_code":       item.get("hsn_code") or "",
+            "description":    item.get("description") or "",
+            "quantity":       _safe_decimal(item.get("quantity")),
+            "uom":            item.get("uom") or "",
+            "unit_rate":      _safe_decimal(item.get("unit_rate")),
+            "discount":       _safe_decimal(item.get("discount")),
+            "taxable_amount": _safe_decimal(item.get("taxable_amount")),
+            "cgst_rate":      _safe_decimal(item.get("cgst_rate")),
+            "cgst_amount":    _safe_decimal(item.get("cgst_amount")),
+            "sgst_rate":      _safe_decimal(item.get("sgst_rate")),
+            "sgst_amount":    _safe_decimal(item.get("sgst_amount")),
+            "igst_rate":      _safe_decimal(item.get("igst_rate")),
+            "igst_amount":    _safe_decimal(item.get("igst_amount")),
+            "cess_rate":      _safe_decimal(item.get("cess_rate")),
+            "cess_amount":    _safe_decimal(item.get("cess_amount")),
+            "tax_code":       item.get("tax_code") or "",
+            "tax_amount":     _safe_decimal(item.get("tax_amount")),
+            "amount":         _safe_decimal(item.get("amount")),
+            "grn_reference":  "",
         })
     return items
 
@@ -272,27 +363,95 @@ def _normalise_line_items(raw_items: list[Any]) -> list[dict[str, Any]]:
 def _normalise_extracted(raw: dict[str, Any], raw_response: dict[str, Any]) -> dict[str, Any]:
     """Map Gemini JSON output onto the ExtractedData schema fields."""
     return {
-        "invoice_no": raw.get("invoice_no") or "",
-        "invoice_date": raw.get("invoice_date") or "",
-        "po_number": raw.get("po_number") or "",
-        "vendor_id": raw.get("vendor_id") or "",
-        "vendor_name": raw.get("vendor_name") or "",
-        "vendor_gstin": raw.get("vendor_gstin") or "",
-        "vendor_address": raw.get("vendor_address") or "",
-        "bill_to_name": raw.get("bill_to_name") or "",
-        "bill_to_address": raw.get("bill_to_address") or "",
-        "ship_to_name": raw.get("ship_to_name") or "",
-        "ship_to_address": raw.get("ship_to_address") or "",
-        "currency": raw.get("currency") or "INR",
-        "gross_amount": _safe_decimal(raw.get("gross_amount")),
-        "tax_amount": _safe_decimal(raw.get("tax_amount")),
-        "net_amount": _safe_decimal(raw.get("net_amount")),
-        "payment_terms": raw.get("payment_terms") or "",
-        "bank_details": raw.get("bank_details") or "",
-        "reference_doc": "",
-        "confidence_score": _calculate_confidence(raw),
-        "line_items": _normalise_line_items(raw.get("line_items", [])),
-        "raw_ocr_response": raw_response,
+        # ── Invoice header ────────────────────────────────────────────────
+        "invoice_no":             raw.get("invoice_no") or "",
+        "invoice_date":           raw.get("invoice_date") or "",
+        "due_date":               raw.get("due_date") or "",
+        "po_number":              raw.get("po_number") or "",
+        "delivery_note":          raw.get("delivery_note") or "",
+        "dispatch_doc_no":        raw.get("dispatch_doc_no") or "",
+        "dispatched_through":     raw.get("dispatched_through") or "",
+        "destination":            raw.get("destination") or "",
+        "invoice_type":           raw.get("invoice_type") or "",
+        "reverse_charge_applicable": raw.get("reverse_charge_applicable") or "",
+        "place_of_supply":        raw.get("place_of_supply") or "",
+
+        # ── e-Invoice / e-Way Bill ────────────────────────────────────────
+        "irn_number":             raw.get("irn_number") or "",
+        "eway_bill_no":           raw.get("eway_bill_no") or "",
+        "eway_bill_date":         raw.get("eway_bill_date") or "",
+        "eway_bill_valid_upto":   raw.get("eway_bill_valid_upto") or "",
+
+        # ── Vendor ────────────────────────────────────────────────────────
+        "vendor_id":              raw.get("vendor_id") or "",
+        "vendor_name":            raw.get("vendor_name") or "",
+        "vendor_gstin":           raw.get("vendor_gstin") or "",
+        "vendor_pan":             raw.get("vendor_pan") or "",
+        "vendor_address":         raw.get("vendor_address") or "",
+        "vendor_state":           raw.get("vendor_state") or "",
+        "vendor_state_code":      raw.get("vendor_state_code") or "",
+        "vendor_email":           raw.get("vendor_email") or "",
+        "vendor_phone":           raw.get("vendor_phone") or "",
+
+        # ── Buyer / Bill-to ───────────────────────────────────────────────
+        "bill_to_name":           raw.get("bill_to_name") or "",
+        "bill_to_gstin":          raw.get("bill_to_gstin") or "",
+        "bill_to_address":        raw.get("bill_to_address") or "",
+        "bill_to_state":          raw.get("bill_to_state") or "",
+        "bill_to_state_code":     raw.get("bill_to_state_code") or "",
+
+        # ── Ship-to ───────────────────────────────────────────────────────
+        "ship_to_name":           raw.get("ship_to_name") or "",
+        "ship_to_gstin":          raw.get("ship_to_gstin") or "",
+        "ship_to_address":        raw.get("ship_to_address") or "",
+        "ship_to_state":          raw.get("ship_to_state") or "",
+        "ship_to_state_code":     raw.get("ship_to_state_code") or "",
+
+        # ── Financials ────────────────────────────────────────────────────
+        "currency":               raw.get("currency") or "INR",
+        "taxable_amount":         _safe_decimal(raw.get("taxable_amount")),
+        "cgst_rate":              _safe_decimal(raw.get("cgst_rate")),
+        "cgst_amount":            _safe_decimal(raw.get("cgst_amount")),
+        "sgst_rate":              _safe_decimal(raw.get("sgst_rate")),
+        "sgst_amount":            _safe_decimal(raw.get("sgst_amount")),
+        "igst_rate":              _safe_decimal(raw.get("igst_rate")),
+        "igst_amount":            _safe_decimal(raw.get("igst_amount")),
+        "cess_amount":            _safe_decimal(raw.get("cess_amount")),
+        "tds_amount":             _safe_decimal(raw.get("tds_amount")),
+        "tcs_amount":             _safe_decimal(raw.get("tcs_amount")),
+        "discount_amount":        _safe_decimal(raw.get("discount_amount")),
+        "freight_charges":        _safe_decimal(raw.get("freight_charges")),
+        "packing_charges":        _safe_decimal(raw.get("packing_charges")),
+        "insurance_charges":      _safe_decimal(raw.get("insurance_charges")),
+        "other_charges":          _safe_decimal(raw.get("other_charges")),
+        "round_off":              _safe_decimal(raw.get("round_off")),
+        "tax_amount":             _safe_decimal(raw.get("tax_amount")),
+        "gross_amount":           _safe_decimal(raw.get("gross_amount")),
+        "net_amount":             _safe_decimal(raw.get("net_amount")),
+
+        # ── Payment & Bank ────────────────────────────────────────────────
+        "payment_terms":          raw.get("payment_terms") or "",
+        "bank_name":              raw.get("bank_name") or "",
+        "bank_account_no":        raw.get("bank_account_no") or "",
+        "bank_ifsc":              raw.get("bank_ifsc") or "",
+        "bank_branch":            raw.get("bank_branch") or "",
+        "bank_details":           raw.get("bank_details") or "",
+
+        # ── Transport / Logistics ─────────────────────────────────────────
+        "vehicle_no":             raw.get("vehicle_no") or "",
+        "lr_no":                  raw.get("lr_no") or "",
+        "lr_date":                raw.get("lr_date") or "",
+        "transport_name":         raw.get("transport_name") or "",
+        "mode_of_transport":      raw.get("mode_of_transport") or "",
+        "terms_of_delivery":      raw.get("terms_of_delivery") or "",
+
+        # ── Other ─────────────────────────────────────────────────────────
+        "declaration":            raw.get("declaration") or "",
+        "notes":                  raw.get("notes") or "",
+        "reference_doc":          "",
+        "confidence_score":       _calculate_confidence(raw),
+        "line_items":             _normalise_line_items(raw.get("line_items", [])),
+        "raw_ocr_response":       raw_response,
     }
 
 

@@ -48,22 +48,22 @@ export function ValidationLoading() {
   return (
     <div className="flex flex-col items-center gap-8 py-12">
       <div className="flex items-center gap-6">
-        <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-indigo-100">
-          <FileText className="h-7 w-7 text-indigo-600" />
+        <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-indigo-100 dark:bg-indigo-900/40">
+          <FileText className="h-7 w-7 text-indigo-600 dark:text-indigo-400" />
         </div>
 
         {/* Animated connecting line */}
-        <div className="relative h-1 w-24 overflow-hidden rounded-full bg-neutral-100">
+        <div className="relative h-1 w-24 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-700">
           <div className="absolute inset-0 -translate-x-full animate-[slide_1.2s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-indigo-500 to-transparent" />
         </div>
 
-        <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-green-100">
-          <Database className="h-7 w-7 text-green-600" />
+        <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-green-100 dark:bg-green-900/40">
+          <Database className="h-7 w-7 text-green-600 dark:text-green-400" />
         </div>
       </div>
 
       <div className="text-center">
-        <p className="text-sm font-semibold text-neutral-800">Validating against SAP</p>
+        <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Validating against SAP</p>
         <p className="mt-1 text-xs text-neutral-400">Fetching PO data and comparing line items…</p>
       </div>
     </div>
@@ -81,7 +81,7 @@ function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void 
     { key: 'gr',     label: 'GR Status' },
   ];
   return (
-    <div className="inline-flex rounded-lg bg-neutral-100 p-1 gap-1">
+    <div className="inline-flex rounded-lg bg-neutral-100 p-1 gap-1 dark:bg-neutral-800">
       {tabs.map((t) => (
         <button
           key={t.key}
@@ -90,8 +90,8 @@ function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void 
           className={cn(
             'rounded-md px-4 py-1.5 text-xs font-semibold transition-colors',
             active === t.key
-              ? 'bg-white text-neutral-900 shadow-soft-sm'
-              : 'text-neutral-500 hover:text-neutral-700',
+              ? 'bg-white text-neutral-900 shadow-soft-sm dark:bg-neutral-700 dark:text-neutral-100'
+              : 'text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200',
           )}
         >
           {t.label}
@@ -117,7 +117,7 @@ function HeaderTab({ mismatches }: { mismatches: MismatchEntry[] }) {
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-neutral-100 bg-neutral-50 text-xs">
+          <tr className="border-b border-neutral-100 bg-neutral-50 text-xs dark:border-neutral-700 dark:bg-neutral-800/80">
             <th className="px-4 py-2.5 text-left font-semibold uppercase tracking-wider text-neutral-400">Field</th>
             <th className="px-4 py-2.5 text-left font-semibold uppercase tracking-wider text-neutral-400">From Invoice</th>
             <th className="px-4 py-2.5 text-left font-semibold uppercase tracking-wider text-neutral-400">From SAP</th>
@@ -129,13 +129,13 @@ function HeaderTab({ mismatches }: { mismatches: MismatchEntry[] }) {
             <tr
               key={i}
               className={cn(
-                'border-b border-neutral-100 text-sm',
-                !r.match && 'bg-red-50/60',
+                'border-b border-neutral-100 text-sm dark:border-neutral-800',
+                !r.match && 'bg-red-50/60 dark:bg-red-950/30',
               )}
             >
-              <td className="px-4 py-3 font-medium text-neutral-700">{r.field}</td>
-              <td className="px-4 py-3 text-neutral-600">{r.extracted}</td>
-              <td className="px-4 py-3 text-neutral-600">{r.sap}</td>
+              <td className="px-4 py-3 font-medium text-neutral-700 dark:text-neutral-300">{r.field}</td>
+              <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">{r.extracted}</td>
+              <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">{r.sap}</td>
               <td className="px-4 py-3 text-center">
                 {r.match
                   ? <CheckCircle2 className="mx-auto h-4 w-4 text-green-500" />
@@ -216,7 +216,7 @@ function GRTab({ grStatus }: { grStatus: GRStatusEntry[] }) {
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-neutral-100 bg-neutral-50 text-xs">
+          <tr className="border-b border-neutral-100 bg-neutral-50 text-xs dark:border-neutral-700 dark:bg-neutral-800/80">
             <th className="px-4 py-2.5 text-left font-semibold uppercase tracking-wider text-neutral-400">Line</th>
             <th className="px-4 py-2.5 text-left font-semibold uppercase tracking-wider text-neutral-400">GR Documents</th>
             <th className="px-4 py-2.5 text-right font-semibold uppercase tracking-wider text-neutral-400">GR Qty</th>
@@ -226,8 +226,8 @@ function GRTab({ grStatus }: { grStatus: GRStatusEntry[] }) {
         </thead>
         <tbody>
           {grStatus.map((g, i) => (
-            <tr key={i} className="border-b border-neutral-100 hover:bg-neutral-50">
-              <td className="px-4 py-3 font-mono text-xs text-neutral-600">{g.line_number}</td>
+            <tr key={i} className="border-b border-neutral-100 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-800/60">
+              <td className="px-4 py-3 font-mono text-xs text-neutral-600 dark:text-neutral-400">{g.line_number}</td>
               <td className="px-4 py-3">
                 {g.gr_documents.length
                   ? g.gr_documents.map((d) => (
@@ -267,7 +267,7 @@ export function ValidationPanel({ validation, onPost, isPosting }: ValidationPan
   return (
     <div className="space-y-5">
       {/* Score + sub-scores */}
-      <div className="flex flex-wrap items-center gap-6 rounded-xl border border-neutral-200 bg-white p-5">
+      <div className="flex flex-wrap items-center gap-6 rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-700 dark:bg-neutral-900">
         <ConfidenceRing score={validation.overall_confidence} />
         <div className="flex-1 grid grid-cols-3 gap-4 min-w-0">
           {[
@@ -290,8 +290,8 @@ export function ValidationPanel({ validation, onPost, isPosting }: ValidationPan
       </div>
 
       {/* Tabs + detail */}
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-        <div className="flex items-center gap-4 border-b border-neutral-100 px-5 py-3.5">
+      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden dark:border-neutral-700 dark:bg-neutral-900">
+        <div className="flex items-center gap-4 border-b border-neutral-100 px-5 py-3.5 dark:border-neutral-700">
           <TabBar active={tab} onChange={setTab} />
           <span className="ml-auto text-xs text-neutral-400">
             {validation.mismatches.length} mismatch{validation.mismatches.length !== 1 ? 'es' : ''} found
@@ -304,7 +304,7 @@ export function ValidationPanel({ validation, onPost, isPosting }: ValidationPan
       </div>
 
       {/* Action bar */}
-      <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white px-5 py-3.5 shadow-lg">
+      <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white px-5 py-3.5 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
         <div>
           {isLow ? (
             <div className="flex items-center gap-2 text-sm text-amber-700">

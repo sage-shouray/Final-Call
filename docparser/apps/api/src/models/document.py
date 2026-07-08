@@ -93,49 +93,120 @@ class FileMetadata(TimestampedModel.__bases__[0]):  # plain BaseModel, no _id
 class LineItem(TimestampedModel.__bases__[0]):
     """One line from an extracted invoice / GR."""
 
-    line_number: str = ""           # 5-digit padded string from OCR e.g. "00010"
-    material_code: str = ""
-    description: str = ""
-    quantity: Decimal = Decimal("0")
-    uom: str = ""
-    unit_rate: Decimal = Decimal("0")
-    amount: Decimal = Decimal("0")
-    tax_code: str = ""
-    tax_amount: Decimal = Decimal("0")
-    hsn_code: str = ""
-    grn_reference: str = ""
+    line_number:    str = ""        # 5-digit padded string from OCR e.g. "00010"
+    material_code:  str = ""
+    hsn_code:       str = ""
+    description:    str = ""
+    quantity:       Decimal = Decimal("0")
+    uom:            str = ""
+    unit_rate:      Decimal = Decimal("0")
+    discount:       Decimal = Decimal("0")
+    taxable_amount: Decimal = Decimal("0")
+    cgst_rate:      Decimal = Decimal("0")
+    cgst_amount:    Decimal = Decimal("0")
+    sgst_rate:      Decimal = Decimal("0")
+    sgst_amount:    Decimal = Decimal("0")
+    igst_rate:      Decimal = Decimal("0")
+    igst_amount:    Decimal = Decimal("0")
+    cess_rate:      Decimal = Decimal("0")
+    cess_amount:    Decimal = Decimal("0")
+    tax_code:       str = ""
+    tax_amount:     Decimal = Decimal("0")
+    amount:         Decimal = Decimal("0")
+    grn_reference:  str = ""
 
 
 class ExtractedData(TimestampedModel.__bases__[0]):
     """Structured data extracted by the OCR / AI layer."""
 
-    # Header
-    invoice_no: str = ""
-    invoice_date: str = ""          # normalised DD-MM-YYYY
-    po_number: str = ""
-    vendor_id: str = ""
-    vendor_name: str = ""
-    vendor_gstin: str = ""
-    vendor_address: str = ""
+    # ── Invoice header ────────────────────────────────────────────────────
+    invoice_no:               str = ""
+    invoice_date:             str = ""   # normalised DD-MM-YYYY
+    due_date:                 str = ""
+    po_number:                str = ""
+    delivery_note:            str = ""
+    dispatch_doc_no:          str = ""
+    dispatched_through:       str = ""
+    destination:              str = ""
+    invoice_type:             str = ""
+    reverse_charge_applicable: str = ""
+    place_of_supply:          str = ""
 
-    # Party details
-    bill_to_name: str = ""
-    bill_to_address: str = ""
-    ship_to_name: str = ""
-    ship_to_address: str = ""
+    # ── e-Invoice / e-Way Bill ────────────────────────────────────────────
+    irn_number:               str = ""
+    eway_bill_no:             str = ""
+    eway_bill_date:           str = ""
+    eway_bill_valid_upto:     str = ""
 
-    # Financials
-    currency: str = "INR"
-    gross_amount: Decimal = Decimal("0")
-    tax_amount: Decimal = Decimal("0")
-    net_amount: Decimal = Decimal("0")
+    # ── Vendor ────────────────────────────────────────────────────────────
+    vendor_id:                str = ""
+    vendor_name:              str = ""
+    vendor_gstin:             str = ""
+    vendor_pan:               str = ""
+    vendor_address:           str = ""
+    vendor_state:             str = ""
+    vendor_state_code:        str = ""
+    vendor_email:             str = ""
+    vendor_phone:             str = ""
 
-    # Terms
-    payment_terms: str = ""
-    bank_details: str = ""
-    reference_doc: str = ""
+    # ── Buyer / Bill-to ───────────────────────────────────────────────────
+    bill_to_name:             str = ""
+    bill_to_gstin:            str = ""
+    bill_to_address:          str = ""
+    bill_to_state:            str = ""
+    bill_to_state_code:       str = ""
 
-    # AI metadata
+    # ── Ship-to ───────────────────────────────────────────────────────────
+    ship_to_name:             str = ""
+    ship_to_gstin:            str = ""
+    ship_to_address:          str = ""
+    ship_to_state:            str = ""
+    ship_to_state_code:       str = ""
+
+    # ── Financials ────────────────────────────────────────────────────────
+    currency:                 str = "INR"
+    taxable_amount:           Decimal = Decimal("0")
+    cgst_rate:                Decimal = Decimal("0")
+    cgst_amount:              Decimal = Decimal("0")
+    sgst_rate:                Decimal = Decimal("0")
+    sgst_amount:              Decimal = Decimal("0")
+    igst_rate:                Decimal = Decimal("0")
+    igst_amount:              Decimal = Decimal("0")
+    cess_amount:              Decimal = Decimal("0")
+    tds_amount:               Decimal = Decimal("0")
+    tcs_amount:               Decimal = Decimal("0")
+    discount_amount:          Decimal = Decimal("0")
+    freight_charges:          Decimal = Decimal("0")
+    packing_charges:          Decimal = Decimal("0")
+    insurance_charges:        Decimal = Decimal("0")
+    other_charges:            Decimal = Decimal("0")
+    round_off:                Decimal = Decimal("0")
+    tax_amount:               Decimal = Decimal("0")
+    gross_amount:             Decimal = Decimal("0")
+    net_amount:               Decimal = Decimal("0")
+
+    # ── Payment & Bank ────────────────────────────────────────────────────
+    payment_terms:            str = ""
+    bank_name:                str = ""
+    bank_account_no:          str = ""
+    bank_ifsc:                str = ""
+    bank_branch:              str = ""
+    bank_details:             str = ""
+
+    # ── Transport / Logistics ─────────────────────────────────────────────
+    vehicle_no:               str = ""
+    lr_no:                    str = ""
+    lr_date:                  str = ""
+    transport_name:           str = ""
+    mode_of_transport:        str = ""
+    terms_of_delivery:        str = ""
+
+    # ── Other ─────────────────────────────────────────────────────────────
+    declaration:              str = ""
+    notes:                    str = ""
+    reference_doc:            str = ""
+
+    # ── AI metadata ───────────────────────────────────────────────────────
     confidence_score: float = Field(default=0.0, ge=0.0, le=1.0)
     line_items: list[LineItem] = Field(default_factory=list)
     raw_ocr_response: dict[str, Any] = Field(default_factory=dict)

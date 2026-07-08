@@ -44,7 +44,7 @@ const EMPTY_ITEM = (): FB60InvoiceItem => ({
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-xs font-medium text-neutral-600">
+      <label className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
         {label}{required && <span className="ml-0.5 text-red-500">*</span>}
       </label>
       {children}
@@ -54,7 +54,10 @@ function Field({ label, required, children }: { label: string; required?: boolea
 
 const inputCls = (error?: boolean) => cn(
   'h-9 w-full rounded-lg border px-3 text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary-200 transition-colors',
-  error ? 'border-red-300 bg-red-50' : 'border-neutral-200 bg-white hover:border-neutral-300',
+  'dark:text-neutral-100 dark:placeholder:text-neutral-600',
+  error
+    ? 'border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-950/40'
+    : 'border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:border-neutral-500',
 );
 
 export function NonPOInvoiceForm({ extracted, isPosting, onPost }: Props) {
@@ -132,9 +135,9 @@ export function NonPOInvoiceForm({ extracted, isPosting, onPost }: Props) {
   return (
     <div className="space-y-5">
       {/* Header Section */}
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-        <div className="border-b border-neutral-100 px-5 py-3.5">
-          <h3 className="text-sm font-semibold text-neutral-800">Invoice Header</h3>
+      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden dark:border-neutral-700 dark:bg-neutral-900">
+        <div className="border-b border-neutral-100 px-5 py-3.5 dark:border-neutral-700">
+          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Invoice Header</h3>
         </div>
         <div className="grid grid-cols-2 gap-4 p-5 sm:grid-cols-4">
           <Field label="Document Type" required>
@@ -173,20 +176,20 @@ export function NonPOInvoiceForm({ extracted, isPosting, onPost }: Props) {
       </div>
 
       {/* Line Items Section */}
-      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-        <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3.5">
-          <h3 className="text-sm font-semibold text-neutral-800">Invoice Line Items</h3>
+      <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden dark:border-neutral-700 dark:bg-neutral-900">
+        <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3.5 dark:border-neutral-700">
+          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Invoice Line Items</h3>
           <button type="button" onClick={addItem}
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-100 transition-colors">
             <Plus className="h-3.5 w-3.5" /> Add Line
           </button>
         </div>
 
-        <div className="divide-y divide-neutral-100">
+        <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
           {items.map((item, idx) => (
             <div key={idx} className="p-5 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-neutral-500">Line {item.line_no}</span>
+                <span className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Line {item.line_no}</span>
                 {items.length > 1 && (
                   <button type="button" onClick={() => removeItem(idx)}
                     className="text-red-400 hover:text-red-600 transition-colors">

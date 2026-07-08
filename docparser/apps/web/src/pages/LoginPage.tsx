@@ -33,16 +33,16 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-4">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 dark:bg-neutral-950 p-4">
       <div className="w-full max-w-sm">
 
         {/* Logo */}
         <div className="mb-8 flex flex-col items-center gap-3 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-neutral-900 shadow-lg">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-neutral-900 dark:bg-neutral-700 shadow-lg">
             <Lock className="h-7 w-7 text-white" strokeWidth={1.75} />
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-neutral-900"
+            <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100"
                 style={{ fontFamily: 'var(--ff-display)' }}>{APP_NAME}</h1>
             <p className="mt-0.5 text-xs font-medium uppercase tracking-widest text-neutral-400">
               SAP Integration Suite
@@ -51,9 +51,9 @@ export default function LoginPage() {
         </div>
 
         {/* Card */}
-        <div className="rounded-2xl bg-white p-8 shadow-soft ring-1 ring-neutral-200/60">
+        <div className="rounded-2xl bg-white p-8 shadow-soft ring-1 ring-neutral-200/60 dark:bg-neutral-800 dark:ring-neutral-700/60">
           <div className="mb-6">
-            <h2 className="text-lg font-semibold text-neutral-900"
+            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100"
                 style={{ fontFamily: 'var(--ff-display)' }}>Welcome back</h2>
             <p className="mt-0.5 text-sm text-neutral-400">
               Sign in to access the document processing portal
@@ -63,7 +63,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Email */}
             <div className="space-y-1.5">
-              <label htmlFor="email" className="block text-sm font-medium text-neutral-700">
+              <label htmlFor="email" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
                 Work email
               </label>
               <input
@@ -81,6 +81,7 @@ export default function LoginPage() {
                   'text-neutral-900 placeholder:text-neutral-400',
                   'focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-200',
                   'disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-500',
+                  'dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600',
                   'transition-colors',
                 )}
               />
@@ -88,7 +89,7 @@ export default function LoginPage() {
 
             {/* Password */}
             <div className="space-y-1.5">
-              <label htmlFor="password" className="block text-sm font-medium text-neutral-700">
+              <label htmlFor="password" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
                 Password
               </label>
               <div className="relative">
@@ -106,6 +107,7 @@ export default function LoginPage() {
                     'text-neutral-900 placeholder:text-neutral-400',
                     'focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-200',
                     'disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-500',
+                    'dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:placeholder:text-neutral-600',
                     'transition-colors',
                   )}
                 />

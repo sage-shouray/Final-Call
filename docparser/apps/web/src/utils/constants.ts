@@ -16,7 +16,7 @@ export interface DocTypeConfig {
 export const DOC_TYPE_CONFIG: Record<DocumentType, DocTypeConfig> = {
   [DocumentType.VENDOR_INVOICE]:  { label: 'Vendor Invoice',  tcode: TCode.MIRO, icon: FileText,       active: true  },
   [DocumentType.SALES_ORDER]:     { label: 'Sales Order',     tcode: TCode.VA01, icon: ClipboardList,  active: true  },
-  [DocumentType.PAYMENT_ADVICE]:  { label: 'Payment Advice',  tcode: TCode.F28,  icon: FileCheck,      active: false },
+  [DocumentType.PAYMENT_ADVICE]:  { label: 'Payment Advice',  tcode: TCode.F28,  icon: FileCheck,      active: true  },
   [DocumentType.GOODS_RECEIPT]:   { label: 'Goods Receipt',   tcode: TCode.MIGO, icon: Package,        active: true  },
   [DocumentType.FREIGHT_INVOICE]: { label: 'Freight Invoice', tcode: TCode.MIRO, icon: Truck,          active: true  },
 };
@@ -81,7 +81,7 @@ export const API = {
 
 // ─── Misc ─────────────────────────────────────────────────────────────────────
 
-export const APP_NAME    = 'DocParser';
+export const APP_NAME    = 'Uvira.ai';
 export const APP_VERSION = '1.0';
 export const APP_COMPANY = 'SSDN Technologies';
 

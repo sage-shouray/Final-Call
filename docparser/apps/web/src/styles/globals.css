@@ -45,6 +45,33 @@
     --ff-mono:    'JetBrains Mono', monospace;
   }
 
+  /* ── Dark mode overrides ────────────────────────────────────────────────── */
+  .dark {
+    --color-bg:        #0f172a;
+    --color-surface:   #1e293b;
+    --color-surface-2: #273548;
+    --color-surface-3: #334155;
+
+    --color-border:   #334155;
+    --color-border-2: #475569;
+
+    --color-text-1: #f1f5f9;
+    --color-text-2: #94a3b8;
+    --color-text-3: #64748b;
+
+    --color-indigo:       #818cf8;
+    --color-indigo-light: #1e1b4b;
+
+    --color-green:       #4ade80;
+    --color-green-light: #052e16;
+
+    --color-amber:       #fbbf24;
+    --color-amber-light: #292524;
+
+    --color-red:       #f87171;
+    --color-red-light: #2d0a0a;
+  }
+
   /* ── Reset ──────────────────────────────────────────────────────────────── */
   *,
   *::before,
@@ -122,10 +149,12 @@
 
   .btn-secondary {
     @apply btn bg-white text-neutral-700 shadow-soft-sm ring-1 ring-neutral-200 hover:bg-neutral-50 active:bg-neutral-100 focus-visible:outline-primary-500;
+    @apply dark:bg-neutral-800 dark:text-neutral-200 dark:ring-neutral-700 dark:hover:bg-neutral-700 dark:active:bg-neutral-600;
   }
 
   .btn-ghost {
     @apply btn text-neutral-600 hover:bg-neutral-100 active:bg-neutral-200 focus-visible:outline-primary-500;
+    @apply dark:text-neutral-300 dark:hover:bg-neutral-800 dark:active:bg-neutral-700;
   }
 
   .btn-danger {
@@ -134,14 +163,16 @@
 
   .card {
     @apply rounded-xl bg-white shadow-soft ring-1 ring-neutral-200/60;
+    @apply dark:bg-neutral-800 dark:ring-neutral-700/60 dark:shadow-none;
   }
 
   .input {
     @apply block w-full rounded-lg border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-900 shadow-inner-soft placeholder:text-neutral-400 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-200 disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-500 transition-colors;
+    @apply dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:disabled:bg-neutral-900 dark:disabled:text-neutral-600;
   }
 
   .label {
-    @apply block text-sm font-medium text-neutral-700;
+    @apply block text-sm font-medium text-neutral-700 dark:text-neutral-300;
   }
 
   .badge {

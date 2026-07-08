@@ -34,8 +34,8 @@ export function StepIndicator({ steps, currentStep }: StepIndicatorProps) {
                   className={cn(
                     'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 transition-all duration-300',
                     state === 'done'   && 'border-indigo-600 bg-indigo-600',
-                    state === 'active' && 'border-indigo-600 bg-white',
-                    state === 'future' && 'border-neutral-300 bg-white',
+                    state === 'active' && 'border-indigo-600 bg-white dark:bg-neutral-800',
+                    state === 'future' && 'border-neutral-300 bg-white dark:border-neutral-600 dark:bg-neutral-800',
                   )}
                 >
                   {state === 'done' ? (
@@ -56,9 +56,10 @@ export function StepIndicator({ steps, currentStep }: StepIndicatorProps) {
 
               {/* Connector line */}
               {!isLast && (
-                <div className="mx-1 flex-1 h-[2px] rounded-full transition-colors duration-500"
-                  style={{ background: state === 'done' ? '#4f46e5' : '#e5e7eb' }}
-                />
+                <div className={cn(
+                  'mx-1 flex-1 h-[2px] rounded-full transition-colors duration-500',
+                  state === 'done' ? 'bg-indigo-500' : 'bg-neutral-200 dark:bg-neutral-700',
+                )} />
               )}
             </div>
 
@@ -67,7 +68,7 @@ export function StepIndicator({ steps, currentStep }: StepIndicatorProps) {
               className={cn(
                 'mt-2 text-[11px] font-medium whitespace-nowrap transition-colors duration-200',
                 state === 'done'   && 'text-indigo-500',
-                state === 'active' && 'text-indigo-700',
+                state === 'active' && 'text-indigo-700 dark:text-indigo-300',
                 state === 'future' && 'text-neutral-400',
               )}
             >

@@ -56,14 +56,15 @@ function MetricCard({ label, value, rawValue, footer, accent, alert }: MetricCar
   const display   = typeof value === 'string' ? value : animValue.toLocaleString('en-IN');
 
   return (
-    <div className={cn('relative overflow-hidden rounded-xl bg-white ring-1 ring-neutral-200/70 shadow-soft', `border-l-[3px] ${accent}`)}>
+    <div className={cn('relative overflow-hidden rounded-xl bg-white ring-1 ring-neutral-200/70 shadow-soft dark:bg-neutral-800 dark:ring-neutral-700/70 dark:shadow-none', `border-l-[3px] ${accent}`)}>
       <div className="px-5 py-4">
         <div className="flex items-start justify-between gap-2">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">{label}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">{label}</p>
           {alert && <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />}
         </div>
-        <p className="mt-2 font-display text-3xl font-semibold text-neutral-900 tabular-nums"
-           style={{ fontFamily: 'var(--ff-display)' }}>
+        <p className="mt-2 font-display font-semibold text-neutral-900 dark:text-neutral-100 tabular-nums break-all leading-tight"
+           style={{ fontFamily: 'var(--ff-display)', fontSize: 'clamp(1rem, 2.5vw, 1.875rem)' }}
+           title={String(display)}>
           {display}
         </p>
         {footer && <p className="mt-1.5 text-xs text-neutral-400">{footer}</p>}
@@ -111,10 +112,10 @@ function BarRow({ label, count, total, pct, color, delay }: BarRowProps) {
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-xs">
-        <span className="font-medium text-neutral-700">{label}</span>
-        <span className="tabular-nums text-neutral-400">{count} <span className="text-neutral-300">·</span> {pct.toFixed(0)}%</span>
+        <span className="font-medium text-neutral-700 dark:text-neutral-300">{label}</span>
+        <span className="tabular-nums text-neutral-400 dark:text-neutral-500">{count} <span className="text-neutral-300 dark:text-neutral-600">·</span> {pct.toFixed(0)}%</span>
       </div>
-      <div className="h-[6px] w-full rounded-none bg-neutral-100">
+      <div className="h-[6px] w-full rounded-none bg-neutral-100 dark:bg-neutral-700">
         <div
           className={cn('h-full rounded-none transition-all duration-700 ease-out', color)}
           style={{ width: `${width}%` }}
@@ -139,18 +140,18 @@ function QuickAction({ label, tcode, icon: Icon, active, uploadType }: QuickActi
 
   return (
     <div className={cn(
-      'relative flex flex-col items-center gap-3 rounded-xl border border-neutral-200 bg-white p-5 text-center shadow-soft',
+      'relative flex flex-col items-center gap-3 rounded-xl border border-neutral-200 bg-white p-5 text-center shadow-soft dark:border-neutral-700 dark:bg-neutral-800 dark:shadow-none',
       !active && 'opacity-50',
     )}>
       <div className={cn(
         'flex h-10 w-10 items-center justify-center rounded-lg',
-        active ? 'bg-indigo-50' : 'bg-neutral-100',
+        active ? 'bg-indigo-50 dark:bg-indigo-950' : 'bg-neutral-100 dark:bg-neutral-700',
       )}>
         <Icon className={cn('h-5 w-5', active ? 'text-indigo-600' : 'text-neutral-400')} />
       </div>
       <div>
-        <p className="text-sm font-semibold text-neutral-800">{label}</p>
-        <p className="mt-0.5 font-mono text-xs text-neutral-400">{tcode}</p>
+        <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{label}</p>
+        <p className="mt-0.5 font-mono text-xs text-neutral-400 dark:text-neutral-500">{tcode}</p>
       </div>
       {active ? (
         <Button
@@ -179,9 +180,9 @@ export default function DashboardPage() {
   useEffect(() => {
     const pending = metrics?.pending_review ?? 0;
     document.title = pending > 0
-      ? `(${pending}) DocParser — Dashboard`
-      : 'DocParser — Dashboard';
-    return () => { document.title = 'DocParser'; };
+      ? `(${pending}) Uvira.ai — Dashboard`
+      : 'Uvira.ai — Dashboard';
+    return () => { document.title = 'Uvira.ai'; };
   }, [metrics?.pending_review]);
 
   const totalValue   = metrics?.total_value_inr ?? '0';
@@ -258,9 +259,9 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_300px]">
 
           {/* LEFT — Recent documents table */}
-          <div className="rounded-xl bg-white shadow-soft ring-1 ring-neutral-200/70 overflow-hidden">
-            <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3.5">
-              <h2 className="text-sm font-semibold text-neutral-800">Recent Documents</h2>
+          <div className="rounded-xl bg-white shadow-soft ring-1 ring-neutral-200/70 overflow-hidden dark:bg-neutral-800 dark:ring-neutral-700/70 dark:shadow-none">
+            <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3.5 dark:border-neutral-700">
+              <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Recent Documents</h2>
               <button
                 type="button"
                 onClick={() => navigate('/documents')}
@@ -272,7 +273,7 @@ export default function DashboardPage() {
 
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-neutral-100 bg-neutral-50">
+                <tr className="border-b border-neutral-100 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900">
                   <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Document</th>
                   <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400">T-Code</th>
                   <th className="px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Amount</th>
@@ -281,7 +282,7 @@ export default function DashboardPage() {
                   <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Date</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100">
+              <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
                 {docsLoading
                   ? Array.from({ length: 5 }, (_, i) => (
                       <tr key={i}><td colSpan={5} className="p-0"><SkeletonRow /></td></tr>
@@ -309,13 +310,13 @@ export default function DashboardPage() {
                         <tr
                           key={doc.id}
                           className={cn(
-                            'cursor-pointer border-l-[3px] transition-colors hover:bg-neutral-50',
+                            'cursor-pointer border-l-[3px] transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-700/50',
                             statusBorderCls(doc.status),
                           )}
                           onClick={() => navigate(`/documents/${doc.document_id}`)}
                         >
                           <td className="px-5 py-3.5">
-                            <p className="font-medium text-neutral-800 font-mono text-xs">
+                            <p className="font-medium text-neutral-800 dark:text-neutral-200 font-mono text-xs">
                               {doc.document_id.slice(0, 12)}…
                             </p>
                             <p className="mt-0.5 text-xs text-neutral-400 truncate max-w-[180px]">
@@ -360,10 +361,10 @@ export default function DashboardPage() {
           <div className="space-y-4">
 
             {/* By T-Code */}
-            <div className="rounded-xl bg-white shadow-soft ring-1 ring-neutral-200/70 p-5">
-              <h2 className="mb-4 text-sm font-semibold text-neutral-800">By T-Code</h2>
+            <div className="rounded-xl bg-white shadow-soft ring-1 ring-neutral-200/70 p-5 dark:bg-neutral-800 dark:ring-neutral-700/70 dark:shadow-none">
+              <h2 className="mb-4 text-sm font-semibold text-neutral-800 dark:text-neutral-200">By T-Code</h2>
               {metricsLoading
-                ? <div className="space-y-3">{[1,2,3,4].map(i => <div key={i} className="h-6 animate-pulse rounded bg-neutral-100" />)}</div>
+                ? <div className="space-y-3">{[1,2,3,4].map(i => <div key={i} className="h-6 animate-pulse rounded bg-neutral-100 dark:bg-neutral-700" />)}</div>
                 : metrics?.by_tcode.length
                   ? (
                     <div className="space-y-3">
@@ -385,10 +386,10 @@ export default function DashboardPage() {
             </div>
 
             {/* By Status */}
-            <div className="rounded-xl bg-white shadow-soft ring-1 ring-neutral-200/70 p-5">
-              <h2 className="mb-4 text-sm font-semibold text-neutral-800">By Status</h2>
+            <div className="rounded-xl bg-white shadow-soft ring-1 ring-neutral-200/70 p-5 dark:bg-neutral-800 dark:ring-neutral-700/70 dark:shadow-none">
+              <h2 className="mb-4 text-sm font-semibold text-neutral-800 dark:text-neutral-200">By Status</h2>
               {metricsLoading
-                ? <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-6 animate-pulse rounded bg-neutral-100" />)}</div>
+                ? <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-6 animate-pulse rounded bg-neutral-100 dark:bg-neutral-700" />)}</div>
                 : sortedStatuses.length
                   ? (
                     <div className="space-y-3">
@@ -413,13 +414,13 @@ export default function DashboardPage() {
 
         {/* ── Quick actions ─────────────────────────────────────────────────── */}
         <div>
-          <h2 className="mb-3 text-sm font-semibold text-neutral-700">Quick Actions</h2>
+          <h2 className="mb-3 text-sm font-semibold text-neutral-700 dark:text-neutral-300">Quick Actions</h2>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
             <QuickAction label="Vendor Invoice"  tcode="MIRO" icon={FileText}  active uploadType="vendor_invoice" />
             <QuickAction label="Sales Order"     tcode="VA01" icon={ClipboardList} active uploadType="sales_order" />
-            <QuickAction label="Payment Advice"  tcode="F-28" icon={FileCheck} active={false} />
+            <QuickAction label="Payment Advice"  tcode="F-28" icon={FileCheck} active uploadType="payment_advice" />
             <QuickAction label="Goods Receipt"   tcode="MIGO" icon={Package}   active uploadType="goods_receipt" />
-            <QuickAction label="Freight Invoice" tcode="MIRO" icon={Truck}     active={false} />
+            <QuickAction label="Freight Invoice" tcode="MIRO" icon={Truck}     active uploadType="freight_invoice" />
           </div>
         </div>
 

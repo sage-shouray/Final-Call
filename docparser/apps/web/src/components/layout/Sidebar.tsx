@@ -3,7 +3,6 @@ import {
   LayoutDashboard, Upload, History, Clock,
   FileText, ClipboardList, FileCheck, Package, Truck,
   Settings, BarChart2, ChevronLeft, ChevronRight,
-  FileSpreadsheet,
 } from 'lucide-react';
 import { useUIStore } from '@/store/uiStore';
 import { useAuthStore } from '@/store/authStore';
@@ -46,8 +45,8 @@ function SidebarLink({
           item.comingSoon
             ? 'cursor-not-allowed opacity-40'
             : isActive
-              ? 'bg-indigo-50 text-indigo-700'
-              : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900',
+              ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
+              : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100',
         )
       }
       aria-disabled={item.comingSoon}
@@ -141,16 +140,16 @@ export function Sidebar() {
       items: [
         { label: 'Vendor Invoice',   to: '/upload?type=vendor_invoice',   icon: FileText },
         { label: 'Sales Order',      to: '/upload?type=sales_order',      icon: ClipboardList, comingSoon: false },
-        { label: 'Payment Advice',   to: '/upload?type=payment_advice',   icon: FileCheck,    comingSoon: true },
+        { label: 'Payment Advice',   to: '/upload?type=payment_advice',   icon: FileCheck,    comingSoon: false },
         { label: 'Goods Receipt',    to: '/upload?type=goods_receipt',    icon: Package,      comingSoon: false },
-        { label: 'Freight Invoice',  to: '/upload?type=freight_invoice',  icon: Truck,        comingSoon: true },
+        { label: 'Freight Invoice',  to: '/upload?type=freight_invoice',  icon: Truck,        comingSoon: false },
       ],
     },
     {
       section: 'System',
       items: [
-        { label: 'Reports',  to: '/reports',  icon: BarChart2,       comingSoon: true },
-        { label: 'Settings', to: '/settings', icon: Settings,        comingSoon: true },
+        { label: 'Reports',  to: '/reports',  icon: BarChart2,       comingSoon: false },
+        { label: 'Settings', to: '/settings', icon: Settings,        comingSoon: false },
       ],
     },
   ];
@@ -160,14 +159,14 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'relative flex h-screen flex-col border-r border-neutral-200 bg-white transition-all duration-200',
+        'relative flex h-screen flex-col border-r border-neutral-200 bg-white transition-all duration-200 dark:border-neutral-700 dark:bg-neutral-900',
         w,
       )}
     >
       {/* Logo */}
       <div
         className={cn(
-          'flex h-14 shrink-0 items-center border-b border-neutral-100 px-4',
+          'flex h-14 shrink-0 items-center border-b border-neutral-100 px-4 dark:border-neutral-800',
           sidebarCollapsed && 'justify-center px-0',
         )}
       >
@@ -175,12 +174,12 @@ export function Sidebar() {
           className="flex cursor-pointer items-center gap-2.5"
           onClick={() => navigate('/dashboard')}
         >
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-neutral-900">
-            <FileSpreadsheet className="h-4 w-4 text-white" />
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-blue-600 to-cyan-500">
+            <span className="text-white text-xs font-black tracking-tighter">U</span>
           </div>
           {!sidebarCollapsed && (
             <div className="leading-none">
-              <p className="text-sm font-bold text-neutral-900 tracking-tight">DocParser</p>
+              <p className="text-sm font-bold tracking-tight bg-gradient-to-r from-blue-600 to-cyan-500 bg-clip-text text-transparent">Uvira.ai</p>
               <p className="text-[10px] text-neutral-400 mt-0.5">SAP Integration Suite</p>
             </div>
           )}
@@ -192,7 +191,7 @@ export function Sidebar() {
         {sections.map(({ section, items }) => (
           <div key={section}>
             {!sidebarCollapsed && (
-              <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
+              <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-neutral-400 dark:text-neutral-600">
                 {section}
               </p>
             )}
@@ -209,7 +208,7 @@ export function Sidebar() {
 
       {/* User profile */}
       <div className={cn(
-        'shrink-0 border-t border-neutral-100 px-3 py-3',
+        'shrink-0 border-t border-neutral-100 px-3 py-3 dark:border-neutral-800',
         sidebarCollapsed && 'flex justify-center px-2',
       )}>
         {sidebarCollapsed ? (
@@ -222,8 +221,8 @@ export function Sidebar() {
           <div className="flex items-center gap-2.5 rounded-lg px-1 py-1.5">
             <Avatar name={user?.name ?? 'U'} />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-neutral-800">{user?.name ?? '—'}</p>
-              <p className="truncate text-xs capitalize text-neutral-400">{user?.role ?? '—'}</p>
+              <p className="truncate text-sm font-medium text-neutral-800 dark:text-neutral-200">{user?.name ?? '—'}</p>
+              <p className="truncate text-xs capitalize text-neutral-400 dark:text-neutral-500">{user?.role ?? '—'}</p>
             </div>
           </div>
         )}
@@ -236,8 +235,8 @@ export function Sidebar() {
         aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         className={cn(
           'absolute -right-3 top-[52px] flex h-6 w-6 items-center justify-center',
-          'rounded-full border border-neutral-200 bg-white shadow-soft-sm',
-          'text-neutral-400 hover:text-neutral-600 transition-colors z-10',
+          'rounded-full border border-neutral-200 bg-white shadow-soft-sm dark:border-neutral-700 dark:bg-neutral-800',
+          'text-neutral-400 hover:text-neutral-600 transition-colors z-10 dark:text-neutral-500 dark:hover:text-neutral-300',
         )}
       >
         {sidebarCollapsed

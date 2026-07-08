@@ -154,12 +154,12 @@ function FilterPanel({ open, draft, onChange, onApply, onReset, onClose }: Filte
       <div
         ref={ref}
         className={cn(
-          'fixed inset-y-0 right-0 z-40 flex w-80 flex-col bg-white shadow-xl transition-transform duration-300',
+          'fixed inset-y-0 right-0 z-40 flex w-80 flex-col bg-white shadow-xl transition-transform duration-300 dark:bg-neutral-800',
           open ? 'translate-x-0' : 'translate-x-full',
         )}
       >
-        <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
-          <h3 className="text-sm font-semibold text-neutral-900">Filter Documents</h3>
+        <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4 dark:border-neutral-700">
+          <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Filter Documents</h3>
           <button
             type="button"
             onClick={onClose}
@@ -213,11 +213,11 @@ function FilterPanel({ open, draft, onChange, onApply, onReset, onClose }: Filte
           </FilterSection>
         </div>
 
-        <div className="border-t border-neutral-100 px-5 py-4 flex gap-3">
+        <div className="border-t border-neutral-100 px-5 py-4 flex gap-3 dark:border-neutral-700">
           <button
             type="button"
             onClick={onReset}
-            className="flex-1 rounded-lg border border-neutral-200 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 transition-colors"
+            className="flex-1 rounded-lg border border-neutral-200 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 transition-colors dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-700"
           >
             Reset
           </button>
@@ -237,7 +237,7 @@ function FilterPanel({ open, draft, onChange, onApply, onReset, onClose }: Filte
 function FilterSection({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">{label}</p>
+      <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">{label}</p>
       {children}
     </div>
   );
@@ -262,7 +262,7 @@ function RadioGroup({
             onChange={() => onChange(opt.value)}
             className="h-4 w-4 border-neutral-300 text-primary-600 focus:ring-primary-200"
           />
-          <span className="text-sm text-neutral-700">{opt.label}</span>
+          <span className="text-sm text-neutral-700 dark:text-neutral-300">{opt.label}</span>
         </label>
       ))}
     </div>
@@ -408,7 +408,7 @@ export default function DocumentsPage() {
 
           {/* Search */}
           <div className={cn(
-            'flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 transition-all duration-200',
+            'flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 transition-all duration-200 dark:border-neutral-700 dark:bg-neutral-800',
             searchExpanded ? 'w-64' : 'w-9',
           )}>
             <button
@@ -426,7 +426,7 @@ export default function DocumentsPage() {
                 placeholder="Search vendor, PO…"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="w-full bg-transparent py-2 text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none"
+                className="w-full bg-transparent py-2 text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none dark:text-neutral-200 dark:placeholder:text-neutral-600"
               />
             )}
             {searchExpanded && searchInput && (
@@ -475,7 +475,7 @@ export default function DocumentsPage() {
           {/* Page size */}
           <div className="ml-auto flex items-center gap-2 text-sm text-neutral-500">
             <span className="text-xs">Show</span>
-            <div className="flex rounded-lg border border-neutral-200 bg-white overflow-hidden">
+            <div className="flex rounded-lg border border-neutral-200 bg-white overflow-hidden dark:border-neutral-700 dark:bg-neutral-800">
               {PAGE_SIZE_OPTIONS.map((n) => (
                 <button
                   key={n}
@@ -484,8 +484,8 @@ export default function DocumentsPage() {
                   className={cn(
                     'px-3 py-1.5 text-xs font-medium transition-colors',
                     limit === n
-                      ? 'bg-neutral-900 text-white'
-                      : 'text-neutral-500 hover:bg-neutral-50',
+                      ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900'
+                      : 'text-neutral-500 hover:bg-neutral-50 dark:text-neutral-400 dark:hover:bg-neutral-700',
                   )}
                 >
                   {n}
@@ -496,7 +496,7 @@ export default function DocumentsPage() {
         </div>
 
         {/* Table */}
-        <div className="overflow-hidden rounded-xl bg-white ring-1 ring-neutral-200/60 shadow-soft">
+        <div className="overflow-hidden rounded-xl bg-white ring-1 ring-neutral-200/60 shadow-soft dark:bg-neutral-800 dark:ring-neutral-700/60 dark:shadow-none">
           <Table>
             <TableHead>
               <TableRow>
@@ -594,8 +594,8 @@ export default function DocumentsPage() {
                     className={cn(
                       'h-8 w-8 rounded-lg text-xs font-medium transition-colors',
                       p === page
-                        ? 'bg-neutral-900 text-white'
-                        : 'border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50',
+                        ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900'
+                        : 'border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700',
                     )}
                   >
                     {p}
