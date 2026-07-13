@@ -75,7 +75,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         await connect_db()
     except Exception as exc:
-        log.warning("MongoDB unavailable at startup — will retry on first request", error=str(exc))
+        log.warning("PostgreSQL unavailable at startup — will retry on first request", error=str(exc))
     try:
         await connect_redis()
     except Exception as exc:
@@ -90,40 +90,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         start_change_stream_worker(), name="change-stream"
     )
     log.info("Background workers started")
-
-    # Sync customers from SAP into MongoDB in background (non-blocking)
-    async def _sync_customers_background() -> None:
-        try:
-            from src.database import get_database
-            from src.routers.customers import _fetch_from_sap
-            from pymongo import UpdateOne
-            db = get_database()
-            collection = db["customers"]
-            count = await collection.count_documents({})
-            if count > 0:
-                log.info("Customer cache already populated", count=count)
-                return
-            log.info("Customer cache empty — syncing from SAP in background")
-            customers = await _fetch_from_sap()
-            batch: list = []
-            for c in customers:
-                cid = c.get("CUSTOMER")
-                if not cid:
-                    continue
-                batch.append(UpdateOne({"CUSTOMER": cid}, {"$set": c}, upsert=True))
-                if len(batch) >= 1000:
-                    await collection.bulk_write(batch, ordered=False)
-                    batch = []
-            if batch:
-                await collection.bulk_write(batch, ordered=False)
-            await collection.create_index([
-                ("CUSTOMER_NAME", "text"), ("CITY", "text"), ("CUSTOMER", "text")
-            ])
-            log.info("Customer sync complete", synced=len(customers))
-        except Exception as exc:
-            log.warning("Background customer sync failed", error=str(exc))
-
-    asyncio.create_task(_sync_customers_background(), name="customer-sync")
 
     yield
 

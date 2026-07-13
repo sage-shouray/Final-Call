@@ -100,18 +100,39 @@ async def validate_invoice_against_po(
 
     # ── Line-item checks ──────────────────────────────────────────────────
     inv_lines: list[dict[str, Any]] = extracted.get("line_items") or []
-    sap_line_map = {item.ITEM_NUMBER.strip(): item for item in sap_po.PO_LINE_ITEMS}
+    sap_lines = sap_po.PO_LINE_ITEMS
+
+    # Build lookup: SAP uses "10","20","30" format; invoices often use "1","2","3"
+    # Support both: exact match first, then positional fallback
+    sap_line_map = {item.ITEM_NUMBER.strip(): item for item in sap_lines}
+
+    def _find_sap_line(line_num: str, idx: int):
+        """Match by exact item number, zero-padded SAP number, or position."""
+        if line_num in sap_line_map:
+            return sap_line_map[line_num]
+        # Try SAP-style: "1" → "10", "2" → "20"
+        sap_style = str(int(line_num) * 10) if line_num.isdigit() else ""
+        if sap_style and sap_style in sap_line_map:
+            return sap_line_map[sap_style]
+        # Try zero-padded: "1" → "00001" or "000010"
+        for key in sap_line_map:
+            if key.lstrip("0") == line_num.lstrip("0"):
+                return sap_line_map[key]
+        # Positional fallback: use nth SAP line
+        if idx < len(sap_lines):
+            return sap_lines[idx]
+        return None
 
     lines_ok = 0
     gr_status_list: list[dict[str, Any]] = []
 
-    for inv_line in inv_lines:
-        line_num = str(inv_line.get("line_number") or "").strip()
-        sap_line = sap_line_map.get(line_num)
+    for idx, inv_line in enumerate(inv_lines):
+        line_num = str(inv_line.get("line_number") or str(idx + 1)).strip()
+        sap_line = _find_sap_line(line_num, idx)
         line_has_mismatch = False
 
         if sap_line is None:
-            mismatches.append(_mismatch(f"line_items[{line_num}]", line_num, "NOT_FOUND", "error"))
+            mismatches.append(_mismatch(f"line_items[{line_num}]", line_num, "NOT_FOUND", "warning"))
             line_has_mismatch = True
         else:
             # material_code
@@ -131,11 +152,16 @@ async def validate_invoice_against_po(
         if not line_has_mismatch:
             lines_ok += 1
 
-        # GR status
+        # GR status — use RECEIVED_QUANTITY from line if no GRN entries
         inv_qty = _dec(inv_line.get("quantity", "0"))
         if sap_line is not None:
-            total_gr_qty = sum(_dec(grn.GR_QUANTITY) for grn in sap_line.GRN)
-            gr_docs = [grn.GR_NUMBER for grn in sap_line.GRN if grn.GR_NUMBER]
+            if sap_line.GRN:
+                total_gr_qty = sum(_dec(grn.GR_QUANTITY) for grn in sap_line.GRN)
+                gr_docs = [grn.GR_NUMBER for grn in sap_line.GRN if grn.GR_NUMBER]
+            else:
+                # No GRN entries — use RECEIVED_QUANTITY from PO line
+                total_gr_qty = _dec(sap_line.RECEIVED_QUANTITY)
+                gr_docs = []
             gr_status = "complete" if total_gr_qty >= inv_qty else ("partial" if total_gr_qty > 0 else "missing")
         else:
             total_gr_qty = Decimal("0")
@@ -163,11 +189,13 @@ async def validate_invoice_against_po(
         + line_confidence * 0.40
         + gr_confidence * 0.20
     )
-    is_valid = overall_confidence >= 0.70
+    # Consider valid if PO was found (has PO_NUMBER) and overall score ≥ 0.60
+    po_found = bool(sap_po.PO_NUMBER)
+    is_valid = po_found and overall_confidence >= 0.60
 
     recommendation = (
         "Document is approved for MIRO posting." if is_valid
-        else "Document requires manual review before posting." if overall_confidence >= 0.50
+        else "Document requires manual review before posting." if overall_confidence >= 0.40
         else "Document has critical mismatches — do not post to SAP."
     )
 
@@ -182,7 +210,7 @@ async def validate_invoice_against_po(
     )
 
     return {
-        "fetched_at": datetime.now(UTC),
+        "fetched_at": datetime.now(UTC).isoformat(),
         "po_data": sap_po.raw_response,
         "header_confidence": round(header_confidence, 4),
         "line_item_confidence": round(line_confidence, 4),
@@ -290,7 +318,7 @@ async def validate_service_invoice_against_po(
     )
 
     return {
-        "fetched_at": datetime.now(UTC),
+        "fetched_at": datetime.now(UTC).isoformat(),
         "po_data": sap_spo.raw_response,
         "header_confidence": round(header_confidence, 4),
         "line_item_confidence": round(line_confidence, 4),

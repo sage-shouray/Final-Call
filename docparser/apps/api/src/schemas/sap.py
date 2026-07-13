@@ -357,3 +357,43 @@ class SOCreateResponse(BaseModel):
     success: bool = False
     message: str = ""
     sap_response: dict[str, Any] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# F-26 (Customer Payment) schemas — ZINV_PAY/INV_PAYMENT
+# ---------------------------------------------------------------------------
+
+
+class F26Payload(BaseModel):
+    """Payload for both simulation (indicator='X') and posting (indicator='')."""
+    company_code:  str = ""
+    customer:      str = ""
+    invoice:       str = ""
+    fiscal_year:   str = ""
+    document_date: str = ""
+    posting_date:  str = ""
+    currency:      str = "INR"
+    amount:        str = ""
+    bank_gl:       str = ""
+    value_date:    str = ""
+    reference:     str = ""
+    header_text:   str = ""
+    item_text:     str = ""
+    indicator:     str = "X"   # "X" = simulate, "" = post
+
+
+class F26ReturnItem(BaseModel):
+    TYPE:    str = ""
+    ID:      str = ""
+    NUMBER:  int = 0
+    MESSAGE: str = ""
+
+
+class F26Response(BaseModel):
+    STATUS:          str = ""
+    MESSAGE:         str = ""
+    RETURN:          list[F26ReturnItem] = Field(default_factory=list)
+    DOCUMENT_NUMBER: str = ""   # only present on actual posting
+    success:         bool = False
+    is_simulation:   bool = True
+    sap_response:    dict[str, Any] = Field(default_factory=dict)

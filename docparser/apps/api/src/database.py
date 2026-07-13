@@ -1,98 +1,55 @@
-"""Async MongoDB connection management via Motor."""
+"""Async PostgreSQL connection management via SQLAlchemy."""
 from collections.abc import AsyncGenerator
 
 import structlog
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
-from pymongo import ASCENDING, DESCENDING, IndexModel
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.config import settings
 
 log = structlog.get_logger(__name__)
 
-_client: AsyncIOMotorClient | None = None  # type: ignore[type-arg]
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_timeout=settings.DB_POOL_TIMEOUT,
+    pool_recycle=settings.DB_POOL_RECYCLE,
+    echo=settings.DEBUG,
+)
 
-# ---------------------------------------------------------------------------
-# Index definitions — declared here so startup can ensure_indexes atomically
-# ---------------------------------------------------------------------------
-_INDEX_SPECS: dict[str, list[IndexModel]] = {
-    "documents": [
-        IndexModel([("document_id", ASCENDING)], unique=True, name="document_id_unique"),
-        IndexModel([("status", ASCENDING)], name="status"),
-        IndexModel([("type", ASCENDING)], name="type"),
-        IndexModel([("tcode", ASCENDING)], name="tcode"),
-        IndexModel([("uploaded_at", DESCENDING)], name="uploaded_at_desc"),
-        IndexModel([("uploaded_by", ASCENDING)], name="uploaded_by"),
-        # Compound index for the common dashboard query pattern
-        IndexModel(
-            [("status", ASCENDING), ("uploaded_at", DESCENDING)],
-            name="status_uploaded_at",
-        ),
-        IndexModel(
-            [("extracted.po_number", ASCENDING)],
-            name="po_number",
-            sparse=True,
-        ),
-    ],
-    "audit_logs": [
-        IndexModel([("document_id", ASCENDING)], name="audit_document_id"),
-        IndexModel([("timestamp", DESCENDING)], name="audit_timestamp_desc"),
-        IndexModel(
-            [("document_id", ASCENDING), ("timestamp", DESCENDING)],
-            name="audit_document_timestamp",
-        ),
-    ],
-    "users": [
-        IndexModel([("email", ASCENDING)], unique=True, name="email_unique"),
-        IndexModel([("role", ASCENDING)], name="role"),
-    ],
-}
+AsyncSessionLocal = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
 
 
 async def connect_db() -> None:
-    global _client
-    _client = AsyncIOMotorClient(
-        str(settings.MONGODB_URL),
-        maxPoolSize=settings.MONGODB_MAX_POOL_SIZE,
-        minPoolSize=settings.MONGODB_MIN_POOL_SIZE,
-        connectTimeoutMS=settings.MONGODB_CONNECT_TIMEOUT_MS,
-        serverSelectionTimeoutMS=settings.MONGODB_SERVER_SELECTION_TIMEOUT_MS,
-        # Keeps the driver from retrying on non-transient errors forever
-        retryWrites=True,
-        retryReads=True,
-    )
-    # Verify the connection is reachable before declaring startup complete
-    await _client.admin.command("ping")
+    """Verify the database is reachable at startup."""
+    async with engine.connect() as conn:
+        await conn.execute(text("SELECT 1"))
     log.info(
-        "MongoDB connected",
-        db=settings.MONGODB_DB_NAME,
-        max_pool=settings.MONGODB_MAX_POOL_SIZE,
-        min_pool=settings.MONGODB_MIN_POOL_SIZE,
+        "PostgreSQL connected",
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_MAX_OVERFLOW,
     )
-    await _ensure_indexes()
-
-
-async def _ensure_indexes() -> None:
-    db = get_database()
-    for collection_name, indexes in _INDEX_SPECS.items():
-        collection = db[collection_name]
-        await collection.create_indexes(indexes)
-        log.debug("Indexes ensured", collection=collection_name, count=len(indexes))
 
 
 async def close_db() -> None:
-    global _client
-    if _client is not None:
-        _client.close()
-        _client = None
-        log.info("MongoDB connection closed")
+    """Dispose the connection pool on shutdown."""
+    await engine.dispose()
+    log.info("PostgreSQL connection pool disposed")
 
 
-def get_database() -> AsyncIOMotorDatabase:  # type: ignore[type-arg]
-    if _client is None:
-        raise RuntimeError("Database not initialised — call connect_db() first")
-    return _client[settings.MONGODB_DB_NAME]
-
-
-async def get_db() -> AsyncGenerator[AsyncIOMotorDatabase, None]:  # type: ignore[type-arg]
-    """FastAPI dependency — yields the database instance."""
-    yield get_database()
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """FastAPI dependency — yields an AsyncSession per request."""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise

@@ -4,9 +4,9 @@ from datetime import UTC, datetime
 import structlog
 from fastapi import APIRouter
 from pydantic import BaseModel
+from sqlalchemy import text
 
 from src.config import settings
-from src.database import get_database
 
 log = structlog.get_logger(__name__)
 router = APIRouter(tags=["Health"])
@@ -20,16 +20,13 @@ class HealthResponse(BaseModel):
     timestamp: str
 
 
-@router.get(
-    "/health",
-    response_model=HealthResponse,
-    summary="Liveness probe — service and dependency status",
-)
+@router.get("/health", response_model=HealthResponse, summary="Liveness probe")
 async def health_check() -> HealthResponse:
     db_status = "up"
     try:
-        db = get_database()
-        await db.command("ping")
+        from src.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
     except Exception:
         db_status = "down"
 

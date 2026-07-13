@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search, SlidersHorizontal, Download, X,
   ChevronUp, ChevronDown, ChevronsUpDown,
-  Upload,
+  Upload, CheckCircle2, Loader2, AlertCircle, ArrowRight,
 } from 'lucide-react';
+import { api } from '@/lib/api';
 import { useDocuments }  from '@/hooks/useDocuments';
 import { StatusPill }    from '@/components/ui/StatusPill';
 import { TCodeChip }     from '@/components/ui/TCodeChip';
@@ -23,6 +25,89 @@ import {
   type DocumentFilters, type DocumentListItem,
 } from '@/types';
 import { DOC_TYPE_LABEL, PAGE_SIZE_OPTIONS, DEFAULT_PAGE_SIZE } from '@/utils/constants';
+
+// ─── Inline action button per row ─────────────────────────────────────────────
+
+function RowAction({ doc }: { doc: DocumentListItem }) {
+  const qc       = useQueryClient();
+  const navigate = useNavigate();
+  const isMigo   = doc.tcode === 'MIGO' || doc.type === 'goods_receipt';
+  const isNonPO  = doc.tcode === 'FB60' || doc.invoice_subtype === 'non_po';
+
+  const validateMut = useMutation({
+    mutationFn: () => api.post(`/documents/${doc.document_id}/validate`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['documents'] }),
+  });
+  const miroMut = useMutation({
+    mutationFn: () => api.post(`/documents/${doc.document_id}/post-miro`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['documents'] }),
+  });
+  const grnMut = useMutation({
+    mutationFn: () => api.post(`/documents/${doc.document_id}/post-grn`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['documents'] }),
+  });
+  const retryMut = useMutation({
+    mutationFn: () => api.post(`/documents/${doc.document_id}/retry`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['documents'] }),
+  });
+
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+
+  if (doc.status === DocumentStatus.EXTRACTED && !isMigo && !isNonPO) {
+    return (
+      <button onClick={(e) => { stop(e); validateMut.mutate(); }} disabled={validateMut.isPending}
+        className="inline-flex items-center gap-1 rounded-md bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100 disabled:opacity-50 border border-primary-200 transition-colors whitespace-nowrap">
+        {validateMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+        {doc.invoice_subtype === 'freight_po' ? 'Validate Freight' : doc.invoice_subtype === 'service_po' ? 'Validate Service' : 'Validate with SAP'}
+      </button>
+    );
+  }
+  if (doc.status === DocumentStatus.EXTRACTED && isMigo) {
+    return (
+      <button onClick={(e) => { stop(e); grnMut.mutate(); }} disabled={grnMut.isPending}
+        className="inline-flex items-center gap-1 rounded-md bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 hover:bg-teal-100 disabled:opacity-50 border border-teal-200 transition-colors whitespace-nowrap">
+        {grnMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowRight className="h-3 w-3" />}
+        Post to MIGO
+      </button>
+    );
+  }
+  if (doc.status === DocumentStatus.VALIDATED && !isMigo) {
+    return (
+      <button onClick={(e) => { stop(e); miroMut.mutate(); }} disabled={miroMut.isPending}
+        className="inline-flex items-center gap-1 rounded-md bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50 border border-green-200 transition-colors whitespace-nowrap">
+        {miroMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowRight className="h-3 w-3" />}
+        Post to MIRO
+      </button>
+    );
+  }
+  if (doc.status === DocumentStatus.GR_POSTED) {
+    return (
+      <button onClick={(e) => { stop(e); miroMut.mutate(); }} disabled={miroMut.isPending}
+        className="inline-flex items-center gap-1 rounded-md bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50 border border-green-200 transition-colors whitespace-nowrap">
+        {miroMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowRight className="h-3 w-3" />}
+        Post to MIRO
+      </button>
+    );
+  }
+  if (doc.status === DocumentStatus.FAILED) {
+    return (
+      <button onClick={(e) => { stop(e); retryMut.mutate(); }} disabled={retryMut.isPending}
+        className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 border border-amber-200 transition-colors whitespace-nowrap">
+        {retryMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <AlertCircle className="h-3 w-3" />}
+        Retry OCR
+      </button>
+    );
+  }
+  if (doc.status === DocumentStatus.POSTED) {
+    return <span className="text-xs text-green-600 font-medium">✓ Complete</span>;
+  }
+  return (
+    <button onClick={(e) => { stop(e); navigate(`/documents/${doc.document_id}`); }}
+      className="inline-flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-600 transition-colors">
+      <ArrowRight className="h-3 w-3" /> View
+    </button>
+  );
+}
 
 // ─── Sort helpers ─────────────────────────────────────────────────────────────
 
@@ -515,13 +600,14 @@ export default function DocumentsPage() {
                   <SortHeader label="Date" field="uploaded_at" current={sortField} dir={sortDir} onSort={toggleSort} />
                 </TableHeaderCell>
                 <TableHeaderCell>MIRO #</TableHeaderCell>
+                <TableHeaderCell>Action</TableHeaderCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {isLoading
                 ? Array.from({ length: 8 }, (_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={9} className="p-0">
+                      <TableCell colSpan={10} className="p-0">
                         <SkeletonRow />
                       </TableCell>
                     </TableRow>
@@ -529,7 +615,7 @@ export default function DocumentsPage() {
                 : docs.length === 0
                   ? (
                       <TableRow>
-                        <TableCell colSpan={9}>
+                        <TableCell colSpan={10}>
                           <div className="flex flex-col items-center gap-3 py-16 text-center">
                             <p className="text-sm font-medium text-neutral-500">No documents match your filters</p>
                             {(badge > 0 || searchInput) && (
@@ -562,6 +648,9 @@ export default function DocumentsPage() {
                         <TableCell className="text-neutral-500 text-xs">{doc.uploaded_by ?? '—'}</TableCell>
                         <TableCell className="text-neutral-500">{formatDate(doc.uploaded_at)}</TableCell>
                         <TableCell className="font-mono text-xs">{doc.miro_number || '—'}</TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <RowAction doc={doc} />
+                        </TableCell>
                       </TableRow>
                     ))
               }

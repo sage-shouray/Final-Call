@@ -148,7 +148,8 @@ class SAPService:
         return max(0, int(60 - elapsed))
 
     async def _http_get_with_body(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
-        """POST request used to fetch PO data — SAP zpo_grn/Detail requires JSON body."""
+        """GET request with a JSON body — SAP zpo_grn/Detail uses GET + JSON body (not POST, not query params)."""
+        import json as _json
         import httpx
         t0 = time.perf_counter()
         auth = (
@@ -156,29 +157,31 @@ class SAPService:
             if settings.SAP_USERNAME
             else None
         )
+        timeout = httpx.Timeout(connect=30.0, read=float(settings.SAP_TIMEOUT_SECONDS), write=30.0, pool=30.0)
         log.info("SAP PO fetch payload", url=url, payload=payload)
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=30.0, read=float(settings.SAP_TIMEOUT_SECONDS), write=30.0, pool=30.0),
-            auth=auth,
-        ) as client:
+
+        async with httpx.AsyncClient(timeout=timeout, auth=auth) as client:
             try:
-                resp = await client.post(
-                    url,
-                    json=payload,
+                resp = await client.request(
+                    method="GET",
+                    url=url,
+                    content=_json.dumps(payload).encode(),
                     headers={"Content-Type": "application/json", "Accept": "application/json"},
                 )
                 duration_ms = int((time.perf_counter() - t0) * 1000)
-                log.info("SAP PO fetch response", url=url, status_code=resp.status_code, duration_ms=duration_ms, body=resp.text[:500])
+                log.info("SAP PO fetch response", url=url, status_code=resp.status_code,
+                         duration_ms=duration_ms, body=resp.text[:500])
                 resp.raise_for_status()
                 return resp.json()
             except httpx.HTTPStatusError as exc:
-                log.warning("SAP HTTP error", url=url, status=exc.response.status_code, body=exc.response.text[:300])
+                log.warning("SAP HTTP error", url=url, status=exc.response.status_code,
+                            body=exc.response.text[:300])
                 raise SAPConnectionError(
                     f"SAP returned HTTP {exc.response.status_code}: {exc.response.text[:200]}",
                     status_code=502,
                 ) from exc
             except httpx.TimeoutException as exc:
-                raise SAPConnectionError(f"SAP PO fetch timed out", status_code=504) from exc
+                raise SAPConnectionError("SAP PO fetch timed out", status_code=504) from exc
 
     async def _http_get(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
         """Single raw HTTP GET — no retry or circuit logic here."""
@@ -454,6 +457,7 @@ class SAPService:
         log.info("fetching Service PO from SAP", po_number=po_clean)
         url = self._sap_url("zspodetail/Detail")
 
+        raw: dict[str, Any] = {}
         import httpx as _httpx
         async for attempt in AsyncRetrying(
             wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -610,6 +614,36 @@ class SAPService:
         )
         log.info("SO simulation response", status=status_val, success=success, message=message)
         return SOSimulateResponse(success=success, message=message, sap_response=raw)
+
+    async def call_f26(self, payload: "F26Payload") -> "F26Response":
+        """Simulate or post a customer payment (F-26) via ZINV_PAY/INV_PAYMENT.
+
+        indicator='X'  → simulation  (no document created)
+        indicator=''   → posting     (SAP creates document, returns DOCUMENT_NUMBER)
+        """
+        from src.schemas.sap import F26Payload, F26Response, F26ReturnItem
+        is_simulation = payload.indicator == "X"
+        log.info("F26 call", mode="simulate" if is_simulation else "post", customer=payload.customer)
+        url = self._sap_url("ZINV_PAY/INV_PAYMENT")
+        raw: dict[str, Any] = await self._http_post(url, payload.model_dump())
+
+        status  = str(raw.get("STATUS", "")).strip().upper()
+        message = str(raw.get("MESSAGE", "")).strip()
+        doc_num = str(raw.get("DOCUMENT_NUMBER", "")).strip()
+        returns = [F26ReturnItem(**r) for r in (raw.get("RETURN") or [])]
+
+        success = status == "S"
+        log.info("F26 response", status=status, message=message, document_number=doc_num, success=success)
+
+        return F26Response(
+            STATUS=status,
+            MESSAGE=message,
+            RETURN=returns,
+            DOCUMENT_NUMBER=doc_num,
+            success=success,
+            is_simulation=is_simulation,
+            sap_response=raw,
+        )
 
     async def post_fb60(self, payload: FB60Payload) -> FB60Response:
         """Post a Non-PO invoice to SAP FB60."""

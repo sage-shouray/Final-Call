@@ -1,55 +1,40 @@
-"""Shared Pydantic v2 base classes and the PyObjectId helper."""
+"""Shared base classes for SQLAlchemy ORM tables and Pydantic schema models."""
 from datetime import UTC, datetime
-from typing import Annotated, Any
 
-from bson import ObjectId
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
-
-
-def _coerce_object_id(v: Any) -> ObjectId:  # noqa: ANN401
-    if isinstance(v, ObjectId):
-        return v
-    if isinstance(v, str) and ObjectId.is_valid(v):
-        return ObjectId(v)
-    raise ValueError(f"Invalid ObjectId: {v!r}")
-
-
-# Annotated type used in model fields — serialises to str in JSON responses
-PyObjectId = Annotated[ObjectId, BeforeValidator(_coerce_object_id)]
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import DateTime, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class MongoModel(BaseModel):
-    """Base for all MongoDB document models.
+class Base(DeclarativeBase):
+    """SQLAlchemy declarative base for all ORM table models."""
+    pass
 
-    - Accepts both '_id' (from Mongo wire) and 'id' (from API input).
-    - Serialises ObjectId as str automatically.
-    - Populates fields from aliases so Motor dicts work out of the box.
-    """
+
+class TimestampMixin:
+    """Auto-managed created_at / updated_at columns."""
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        server_default=func.now(),
+        onupdate=_utcnow,
+    )
+
+
+class PydanticBase(BaseModel):
+    """Shared config for all Pydantic domain / schema models."""
 
     model_config = ConfigDict(
         populate_by_name=True,
         arbitrary_types_allowed=True,
-        # ObjectId → str when .model_dump(mode="json") or JSON serialisation
-        json_encoders={ObjectId: str},
     )
-
-    id: PyObjectId = Field(default_factory=ObjectId, alias="_id")
-
-    def to_mongo(self) -> dict[str, Any]:
-        """Return a dict suitable for insertion / replacement in MongoDB."""
-        data = self.model_dump(by_alias=True, exclude_none=False)
-        # Ensure _id is an ObjectId, not a str
-        if isinstance(data.get("_id"), str):
-            data["_id"] = ObjectId(data["_id"])
-        return data
-
-
-class TimestampedModel(MongoModel):
-    """Adds auto-managed created_at / updated_at timestamps."""
-
-    created_at: datetime = Field(default_factory=_utcnow)
-    updated_at: datetime = Field(default_factory=_utcnow)

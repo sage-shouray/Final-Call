@@ -1,7 +1,7 @@
-from src.models.audit_log import AuditLog
-from src.models.base import MongoModel, PyObjectId, TimestampedModel
+from src.models.audit_log import AuditLog, AuditLogRow
+from src.models.base import Base, PydanticBase, TimestampMixin
 from src.models.document import (
-    Document,
+    DocumentRow,
     DocumentStatus,
     DocumentType,
     ErrorEntry,
@@ -15,11 +15,13 @@ from src.models.document import (
     SAPValidation,
     TCode,
 )
-from src.models.user import User, UserRole
+from src.models.user import User, UserRole, UserRow
 
 __all__ = [
     "AuditLog",
-    "Document",
+    "AuditLogRow",
+    "Base",
+    "DocumentRow",
     "DocumentStatus",
     "DocumentType",
     "ErrorEntry",
@@ -30,11 +32,11 @@ __all__ = [
     "MIROPosting",
     "MIROStatus",
     "MismatchEntry",
-    "MongoModel",
-    "PyObjectId",
+    "PydanticBase",
     "SAPValidation",
     "TCode",
-    "TimestampedModel",
+    "TimestampMixin",
     "User",
     "UserRole",
+    "UserRow",
 ]

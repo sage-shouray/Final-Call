@@ -1,46 +1,47 @@
 """Customer endpoints for Sales Order (VA01) flow.
 
 GET  /api/customers/search?q=...   — search customers directly from SAP API
-POST /api/customers/sync            — optional: bulk-sync SAP → MongoDB for faster future lookups
+POST /api/customers/sync            — optional: bulk-sync SAP → PostgreSQL for faster future lookups
 """
-from typing import Annotated
+import uuid
+from typing import Annotated, Any
 
-import aiohttp
 import structlog
 from fastapi import APIRouter, HTTPException, Query
+from sqlalchemy import select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.config import settings
+from src.database import AsyncSessionLocal
 from src.middleware.auth import CurrentUser
 
 log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/customers", tags=["Customers"])
 
-_COLLECTION = "customers"
-# SAP customer fetch can take 60-180 s for large datasets — use a dedicated long timeout
-_SAP_CUSTOMER_TIMEOUT = aiohttp.ClientTimeout(total=180)
+_SAP_CUSTOMER_TIMEOUT = 180  # seconds
 
 
 def _sap_customer_url() -> str:
     base = settings.SAP_BASE_URL.rstrip("/")
-    client = settings.SAP_CLIENT
-    return f"{base}/ZCUSTOMER/CUSTOMER?sap-client={client}"
+    return f"{base}/ZCUSTOMER/CUSTOMER?sap-client={settings.SAP_CLIENT}"
 
 
 async def _fetch_from_sap() -> list[dict]:
-    """Fetch all customers directly from SAP with a 3-minute timeout."""
+    """Fetch all customers directly from SAP with a long timeout."""
+    import httpx
+
     url = _sap_customer_url()
     auth = None
     if getattr(settings, "SAP_USERNAME", None) and getattr(settings, "SAP_PASSWORD", None):
-        auth = aiohttp.BasicAuth(settings.SAP_USERNAME, settings.SAP_PASSWORD)
+        auth = (settings.SAP_USERNAME, settings.SAP_PASSWORD.get_secret_value())
 
-    async with aiohttp.ClientSession(timeout=_SAP_CUSTOMER_TIMEOUT, auth=auth) as session:
-        async with session.get(url) as resp:
-            resp.raise_for_status()
-            raw = await resp.json(content_type=None)
+    async with httpx.AsyncClient(timeout=_SAP_CUSTOMER_TIMEOUT, auth=auth) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        raw = resp.json()
 
     if isinstance(raw, list):
         return raw
-    # Handle OData/SAP envelope formats
     return (
         raw.get("CUSTOMERS")
         or raw.get("customers")
@@ -50,33 +51,30 @@ async def _fetch_from_sap() -> list[dict]:
     )
 
 
-def _normalize(text: str) -> str:
-    """Lowercase and remove all spaces for fuzzy matching."""
-    return str(text).lower().replace(" ", "").replace("-", "")
+def _normalize(text_: str) -> str:
+    return str(text_).lower().replace(" ", "").replace("-", "")
 
 
 def _filter_customers(all_customers: list[dict], query: str, limit: int) -> list[dict]:
-    """Match customers using multiple strategies — handles OCR spacing/casing differences."""
-    q_raw   = query.lower().strip()          # "gulshan new partner 3"
-    q_norm  = _normalize(query)              # "gulshanewpartner3"
-    q_words = set(q_raw.split())             # {"gulshan", "new", "partner", "3"}
+    q_raw   = query.lower().strip()
+    q_norm  = _normalize(query)
+    q_words = set(q_raw.split())
 
     scored = []
     for c in all_customers:
-        name     = str(c.get("CUSTOMER_NAME", ""))
-        name_raw = name.lower().strip()
+        name      = str(c.get("CUSTOMER_NAME", ""))
+        name_raw  = name.lower().strip()
         name_norm = _normalize(name)
 
-        if q_norm == name_norm:                          # exact normalized match
+        if q_norm == name_norm:
             score = 100
-        elif q_raw == name_raw:                          # exact raw match
+        elif q_raw == name_raw:
             score = 90
-        elif q_norm in name_norm or name_norm in q_norm: # substring normalized
+        elif q_norm in name_norm or name_norm in q_norm:
             score = 80
-        elif q_raw in name_raw or name_raw in q_raw:     # substring raw
+        elif q_raw in name_raw or name_raw in q_raw:
             score = 70
         else:
-            # word overlap — how many query words appear in the name
             name_words = set(name_raw.split())
             overlap = len(q_words & name_words)
             if overlap == 0:
@@ -91,9 +89,59 @@ def _filter_customers(all_customers: list[dict], query: str, limit: int) -> list
     return [c for _, c in scored[:limit]]
 
 
+async def _pg_search(query: str, limit: int) -> list[dict[str, Any]]:
+    """Try a full-text search in the local PostgreSQL customer cache."""
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                text("""
+                    SELECT data FROM customers
+                    WHERE to_tsvector('english',
+                        coalesce(data->>'CUSTOMER_NAME','') || ' ' ||
+                        coalesce(data->>'CITY','') || ' ' ||
+                        coalesce(customer_id,''))
+                    @@ plainto_tsquery('english', :q)
+                    ORDER BY ts_rank(
+                        to_tsvector('english',
+                            coalesce(data->>'CUSTOMER_NAME','') || ' ' ||
+                            coalesce(data->>'CITY','') || ' ' ||
+                            coalesce(customer_id,'')),
+                        plainto_tsquery('english', :q)
+                    ) DESC
+                    LIMIT :lim
+                """),
+                {"q": query, "lim": limit},
+            )
+            return [row[0] for row in result.all()]
+    except Exception:
+        return []
+
+
+async def _pg_upsert(customers: list[dict]) -> None:
+    """Cache a batch of SAP customers into PostgreSQL."""
+    try:
+        async with AsyncSessionLocal() as session:
+            for c in customers:
+                cid = c.get("CUSTOMER") or c.get("customer")
+                if not cid:
+                    continue
+                await session.execute(
+                    text("""
+                        INSERT INTO customers (id, customer_id, data)
+                        VALUES (:id, :cid, :data::jsonb)
+                        ON CONFLICT (customer_id) DO UPDATE SET data = EXCLUDED.data
+                    """),
+                    {"id": str(uuid.uuid4()), "cid": str(cid), "data": str(c).replace("'", '"')},
+                )
+            await session.commit()
+    except Exception as exc:
+        log.warning("PostgreSQL customer cache write failed", error=str(exc))
+
+
 # ---------------------------------------------------------------------------
 # GET /api/customers/search
 # ---------------------------------------------------------------------------
+
 
 @router.get("/search")
 async def search_customers(
@@ -101,50 +149,19 @@ async def search_customers(
     q: Annotated[str, Query(min_length=1)] = "",
     limit: int = 10,
 ):
-    """
-    Search customers by name/ID.
-    1. Tries MongoDB first (fast, if sync has been done).
-    2. Falls back to live SAP API if MongoDB returns nothing.
-    """
     if not q:
         return {"customers": [], "total": 0}
 
-    # ── 1. Try MongoDB (instant if synced) ──────────────────────────────────
-    try:
-        from src.database import get_database
-        db = get_database()
-        collection = db[_COLLECTION]
+    # 1. Try PostgreSQL cache (fast if synced)
+    pg_results = await _pg_search(q, limit)
+    if pg_results:
+        log.info("customer search → PostgreSQL cache", query=q, count=len(pg_results))
+        return {"customers": pg_results, "total": len(pg_results), "source": "postgresql"}
 
-        mongo_results: list[dict] = []
-        try:
-            cursor = collection.find(
-                {"$text": {"$search": q}},
-                {"score": {"$meta": "textScore"}},
-            ).sort([("score", {"$meta": "textScore"})]).limit(limit)
-            async for doc in cursor:
-                doc.pop("_id", None)
-                mongo_results.append(doc)
-        except Exception:
-            cursor = collection.find(
-                {"CUSTOMER_NAME": {"$regex": q, "$options": "i"}},
-            ).limit(limit)
-            async for doc in cursor:
-                doc.pop("_id", None)
-                mongo_results.append(doc)
-
-        if mongo_results:
-            log.info("customer search → MongoDB", query=q, count=len(mongo_results))
-            return {"customers": mongo_results, "total": len(mongo_results), "source": "mongodb"}
-    except Exception as mongo_err:
-        log.warning("MongoDB unavailable, going to SAP", error=str(mongo_err))
-
-    # ── 2. Direct SAP API call (always works, just slower) ──────────────────
+    # 2. Direct SAP API call (always works, just slower)
     log.info("customer search → SAP direct", query=q)
     try:
         all_customers = await _fetch_from_sap()
-    except aiohttp.ClientResponseError as exc:
-        log.error("SAP customer API error", status=exc.status, url=exc.request_info.url)
-        raise HTTPException(status_code=502, detail=f"SAP API returned {exc.status}")
     except Exception as exc:
         log.error("SAP customer fetch failed", error=str(exc))
         raise HTTPException(status_code=502, detail="Could not reach SAP customer API")
@@ -152,31 +169,21 @@ async def search_customers(
     results = _filter_customers(all_customers, q, limit)
     log.info("SAP customer search done", query=q, total_from_sap=len(all_customers), matched=len(results))
 
-    # Cache found customers into MongoDB for future fast lookups
     if results:
-        try:
-            from pymongo import UpdateOne
-            from src.database import get_database
-            db = get_database()
-            ops = [
-                UpdateOne({"CUSTOMER": c["CUSTOMER"]}, {"$set": c}, upsert=True)
-                for c in results if c.get("CUSTOMER")
-            ]
-            if ops:
-                await db[_COLLECTION].bulk_write(ops, ordered=False)
-        except Exception:
-            pass  # cache failure is non-fatal
+        import asyncio
+        asyncio.create_task(_pg_upsert(results))
 
     return {"customers": results, "total": len(results), "source": "sap_live"}
 
 
 # ---------------------------------------------------------------------------
-# POST /api/customers/sync  (optional one-time bulk load)
+# POST /api/customers/sync
 # ---------------------------------------------------------------------------
+
 
 @router.post("/sync")
 async def sync_customers(current_user: CurrentUser):
-    """Pull ALL customers from SAP and upsert into MongoDB (run once for fast future searches)."""
+    """Pull ALL customers from SAP and upsert into PostgreSQL."""
     log.info("customer bulk sync started", triggered_by=current_user.id)
 
     try:
@@ -187,34 +194,26 @@ async def sync_customers(current_user: CurrentUser):
     if not all_customers:
         return {"synced": 0, "message": "No customers returned from SAP"}
 
-    from pymongo import UpdateOne
-    from src.database import get_database
-    db = get_database()
-    collection = db[_COLLECTION]
-
-    batch: list = []
     synced = 0
-    for c in all_customers:
-        customer_id = c.get("CUSTOMER") or c.get("customer")
-        if not customer_id:
-            continue
-        batch.append(UpdateOne({"CUSTOMER": customer_id}, {"$set": c}, upsert=True))
-        synced += 1
-        if len(batch) >= 1000:
-            await collection.bulk_write(batch, ordered=False)
-            batch = []
-
-    if batch:
-        await collection.bulk_write(batch, ordered=False)
-
     try:
-        await collection.create_index([
-            ("CUSTOMER_NAME", "text"),
-            ("CITY", "text"),
-            ("CUSTOMER", "text"),
-        ])
-    except Exception:
-        pass
+        async with AsyncSessionLocal() as session:
+            for c in all_customers:
+                cid = c.get("CUSTOMER") or c.get("customer")
+                if not cid:
+                    continue
+                import json
+                await session.execute(
+                    text("""
+                        INSERT INTO customers (id, customer_id, data)
+                        VALUES (:id, :cid, :data::jsonb)
+                        ON CONFLICT (customer_id) DO UPDATE SET data = EXCLUDED.data
+                    """),
+                    {"id": str(uuid.uuid4()), "cid": str(cid), "data": json.dumps(c)},
+                )
+                synced += 1
+            await session.commit()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Database write failed: {exc}")
 
     log.info("customer bulk sync complete", synced=synced)
-    return {"synced": synced, "message": f"Synced {synced} customers from SAP into MongoDB"}
+    return {"synced": synced, "message": f"Synced {synced} customers from SAP into PostgreSQL"}

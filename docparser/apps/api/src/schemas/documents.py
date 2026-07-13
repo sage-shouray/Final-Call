@@ -77,6 +77,19 @@ class FB60TriggerResponse(BaseModel):
     message: str
 
 
+class F26SimulateTriggerResponse(BaseModel):
+    document_id: str
+    status: str
+    message: str
+
+
+class F26PostTriggerResponse(BaseModel):
+    document_id: str
+    status: str
+    message: str
+    document_number: str = ""
+
+
 class DocumentResponse(BaseModel):
     """Serialised document returned to the frontend."""
 
@@ -94,6 +107,8 @@ class DocumentResponse(BaseModel):
     grn_posting: dict[str, Any] | None = None
     miro_posting: dict[str, Any] | None = None
     fb60_posting: dict[str, Any] | None = None
+    f26_simulation: dict[str, Any] | None = None
+    f26_posting: dict[str, Any] | None = None
     retry_count: int
     error_log: list[dict[str, Any]]
     created_at: str

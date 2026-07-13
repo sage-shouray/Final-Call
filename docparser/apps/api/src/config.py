@@ -1,5 +1,4 @@
 """Application configuration via pydantic-settings."""
-# config reload marker: gemini-2.5-flash
 from functools import lru_cache
 from typing import Annotated
 
@@ -9,7 +8,6 @@ from pydantic import (
     RedisDsn,
     SecretStr,
     field_validator,
-    model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -28,19 +26,13 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     SECRET_KEY: SecretStr = Field(default="change-me-in-production")
 
-    # ── Database ──────────────────────────────────────────────────────────
-    MONGODB_URL: str = Field(default="mongodb://localhost:27017")
-    MONGODB_DB_NAME: str = "docparser"
-    MONGODB_MAX_POOL_SIZE: Annotated[int, Field(ge=1, le=200)] = 50
-    MONGODB_MIN_POOL_SIZE: Annotated[int, Field(ge=0, le=50)] = 5
-    MONGODB_CONNECT_TIMEOUT_MS: int = 5_000
-    MONGODB_SERVER_SELECTION_TIMEOUT_MS: int = 10_000
-
-    @model_validator(mode="after")
-    def _pool_bounds(self) -> "Settings":
-        if self.MONGODB_MIN_POOL_SIZE > self.MONGODB_MAX_POOL_SIZE:
-            raise ValueError("MONGODB_MIN_POOL_SIZE must be ≤ MONGODB_MAX_POOL_SIZE")
-        return self
+    # ── Database — PostgreSQL ─────────────────────────────────────────────
+    # Format: postgresql+asyncpg://user:password@host:port/dbname
+    DATABASE_URL: str = Field(default="postgresql+asyncpg://postgres:postgres@localhost:5432/docparser")
+    DB_POOL_SIZE: Annotated[int, Field(ge=1, le=100)] = 20
+    DB_MAX_OVERFLOW: Annotated[int, Field(ge=0, le=100)] = 10
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 1800   # recycle connections every 30 min
 
     # ── Redis / Celery ────────────────────────────────────────────────────
     REDIS_URL: RedisDsn = Field(default="redis://localhost:6379/0")
@@ -54,8 +46,8 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: Annotated[int, Field(ge=1, le=90)] = 7
 
     # ── Rate limiting ─────────────────────────────────────────────────────
-    RATE_LIMIT_DEFAULT: Annotated[int, Field(ge=1)] = 100   # req / min, regular users
-    RATE_LIMIT_ADMIN: Annotated[int, Field(ge=1)] = 300     # req / min, admin role
+    RATE_LIMIT_DEFAULT: Annotated[int, Field(ge=1)] = 100
+    RATE_LIMIT_ADMIN: Annotated[int, Field(ge=1)] = 300
 
     # ── CORS ──────────────────────────────────────────────────────────────
     CORS_ORIGINS: list[AnyHttpUrl | str] = ["http://localhost:3000"]
@@ -93,7 +85,7 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: Annotated[int, Field(ge=1, le=100)] = 50
     PROCESSING_CONCURRENCY: Annotated[int, Field(ge=1, le=20)] = 4
 
-    # ── Derived helpers (not env vars) ────────────────────────────────────
+    # ── Derived helpers ───────────────────────────────────────────────────
     @property
     def is_production(self) -> bool:
         return self.ENV == "production"
@@ -101,6 +93,11 @@ class Settings(BaseSettings):
     @property
     def max_upload_bytes(self) -> int:
         return self.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+
+    @property
+    def sync_database_url(self) -> str:
+        """Synchronous URL for Alembic migrations (uses psycopg2)."""
+        return self.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
 
 
 @lru_cache

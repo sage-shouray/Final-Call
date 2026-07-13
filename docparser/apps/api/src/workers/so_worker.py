@@ -14,7 +14,6 @@ def _today_yyyymmdd() -> str:
 
 
 def _build_so_payload(extracted: dict[str, Any], customer: dict[str, Any]) -> dict[str, Any]:
-    """Build the VA01 payload from OCR-extracted data + customer master data."""
     from src.schemas.sap import SOItemData, SOPartnerData, SOPayload, SOScheduleData
 
     customer_id = customer.get("CUSTOMER", "")
@@ -80,10 +79,21 @@ def _build_so_payload(extracted: dict[str, Any], customer: dict[str, Any]) -> di
     return payload.model_dump()
 
 
+async def _fetch_customer(session: Any, customer_id: str) -> dict[str, Any] | None:
+    """Fetch customer row from the PostgreSQL customers table."""
+    from sqlalchemy import text
+    result = await session.execute(
+        text("SELECT data FROM customers WHERE data->>'CUSTOMER' = :cid LIMIT 1"),
+        {"cid": customer_id},
+    )
+    row = result.fetchone()
+    return dict(row[0]) if row else None
+
+
 async def run_so_simulate(document_id: str, customer_id: str) -> None:
-    """Fetch customer from MongoDB, build payload, simulate via ZDATA_HOLD/DATA_SIMULATE."""
+    """Fetch customer, build payload, simulate via ZDATA_HOLD/DATA_SIMULATE."""
     import traceback as _tb
-    from src.database import get_database
+    from src.database import AsyncSessionLocal
     from src.models.document import DocumentStatus, SOSimulation
     from src.repositories.document_repository import DocumentRepository
     from src.services.sap_service import get_sap_service
@@ -92,185 +102,145 @@ async def run_so_simulate(document_id: str, customer_id: str) -> None:
     bound_log = log.bind(document_id=document_id)
     bound_log.info("SO simulation started", customer_id=customer_id)
 
-    db = None
-    doc_repo = None
-    doc = None
-
-    try:
-        db = get_database()
-        doc_repo = DocumentRepository(db)
-
-        doc = await doc_repo.find_by_document_id(document_id)
-        if not doc:
-            bound_log.error("document not found")
-            return
-
-        # doc is always a raw dict from the repository
-        extracted = doc.get("extracted") or {}
-
-        # Fetch customer from MongoDB cache
-        customer_raw = await db["customers"].find_one({"CUSTOMER": customer_id})
-        if not customer_raw:
-            bound_log.error("customer not in MongoDB cache", customer_id=customer_id)
-            await db["documents"].update_one(
-                {"document_id": document_id},
-                {"$set": {"status": str(DocumentStatus.FAILED)}}
-            )
-            return
-
-        customer_raw.pop("_id", None)
-        bound_log.info("customer fetched", customer=customer_raw.get("CUSTOMER_NAME"),
-                       sales_org=customer_raw.get("SALES_ORGANIZATION"),
-                       distr_chan=customer_raw.get("DISTRIBUTION_CHANNEL"),
-                       division=customer_raw.get("DIVISION"))
-
-        payload_dict = _build_so_payload(extracted, customer_raw)
-        bound_log.info("SO payload built", payload=payload_dict)
-
-        payload = SOPayload(**payload_dict)
-        await db["documents"].update_one(
-            {"document_id": document_id},
-            {"$set": {"status": str(DocumentStatus.VALIDATING)}},
-        )
-
-        sap = get_sap_service()
-        result = await sap.simulate_sales_order(payload)
-
-        bound_log.info("SAP simulate response",
-                       success=result.success,
-                       message=result.message,
-                       sap_response=result.sap_response)
-
-        simulation = SOSimulation(
-            payload_sent=payload_dict,
-            sap_response=result.sap_response,
-            status="success" if result.success else "failed",
-        )
-
-        # Always move to VALIDATED so frontend transitions — success/fail shown via so_simulation.status
-        update_result = await db["documents"].update_one(
-            {"document_id": document_id},
-            {"$set": {
-                "so_simulation": simulation.model_dump(),
-                "status": str(DocumentStatus.VALIDATED),
-            }},
-        )
-        bound_log.info("SO simulation saved",
-                       matched=update_result.matched_count,
-                       modified=update_result.modified_count,
-                       sim_status=simulation.status,
-                       message=result.message)
-
-    except Exception as exc:
-        bound_log.error("SO simulation exception", error=str(exc), traceback=_tb.format_exc())
-        # Always update status so frontend doesn't hang on 'validating'
+    async with AsyncSessionLocal() as session:
+        doc_repo = DocumentRepository(session)
         try:
-            if db is not None:
-                await db["documents"].update_one(
-                    {"document_id": document_id},
-                    {"$set": {
-                        "status": str(DocumentStatus.VALIDATED),
+            doc = await doc_repo.find_by_document_id(document_id)
+            if not doc:
+                bound_log.error("document not found")
+                return
+
+            doc_id = doc["id"]
+            extracted = doc.get("extracted") or {}
+
+            customer_raw = await _fetch_customer(session, customer_id)
+            if not customer_raw:
+                bound_log.error("customer not in PostgreSQL cache", customer_id=customer_id)
+                await doc_repo.update_status(doc_id, DocumentStatus.FAILED, error_entry={
+                    "stage": "so_simulation", "message": f"Customer {customer_id} not found in cache",
+                    "detail": "CUSTOMER_NOT_FOUND", "timestamp": datetime.now(UTC).isoformat(),
+                })
+                await session.commit()
+                return
+
+            bound_log.info("customer fetched", customer=customer_raw.get("CUSTOMER_NAME"))
+
+            payload_dict = _build_so_payload(extracted, customer_raw)
+            payload = SOPayload(**payload_dict)
+
+            await doc_repo.update_status(doc_id, DocumentStatus.VALIDATING)
+            await session.commit()
+
+            sap = get_sap_service()
+            result = await sap.simulate_sales_order(payload)
+
+            bound_log.info("SAP simulate response", success=result.success, message=result.message)
+
+            simulation = SOSimulation(
+                payload_sent=payload_dict,
+                sap_response=result.sap_response,
+                status="success" if result.success else "failed",
+            )
+            await doc_repo.update(doc_id, {
+                "so_simulation": simulation.model_dump(),
+                "status":        DocumentStatus.VALIDATED.value,
+            })
+            await session.commit()
+            bound_log.info("SO simulation saved", sim_status=simulation.status)
+
+        except Exception as exc:
+            bound_log.error("SO simulation exception", error=str(exc), traceback=_tb.format_exc())
+            try:
+                doc2 = await doc_repo.find_by_document_id(document_id)
+                if doc2:
+                    await doc_repo.update(doc2["id"], {
+                        "status": DocumentStatus.VALIDATED.value,
                         "so_simulation": {
                             "status": "failed",
                             "sap_response": {"STATUS": "ERROR", "MESSAGE": str(exc)},
                             "payload_sent": {},
                             "simulated_at": datetime.now(UTC).isoformat(),
                         },
-                    }},
-                )
-        except Exception as db_exc:
-            bound_log.error("Failed to update DB after exception", error=str(db_exc))
+                    })
+                    await session.commit()
+            except Exception as db_exc:
+                bound_log.error("Failed to update DB after exception", error=str(db_exc))
 
 
 async def run_so_create(document_id: str, customer_id: str) -> None:
     """Build payload and create Sales Order via ZCREATE_SALESOR/SALESORDER_CREATE."""
     import traceback as _tb
-    from src.database import get_database
+    from src.database import AsyncSessionLocal
     from src.models.document import DocumentStatus
+    from src.repositories.document_repository import DocumentRepository
     from src.schemas.sap import SOPayload
     from src.services.sap_service import get_sap_service
 
     bound_log = log.bind(document_id=document_id)
     bound_log.info("SO create started", customer_id=customer_id)
 
-    db = None
-    try:
-        db = get_database()
-        from src.repositories.document_repository import DocumentRepository
-        doc_repo = DocumentRepository(db)
+    async with AsyncSessionLocal() as session:
+        doc_repo = DocumentRepository(session)
+        try:
+            doc = await doc_repo.find_by_document_id(document_id)
+            if not doc:
+                bound_log.error("document not found")
+                return
 
-        doc = await doc_repo.find_by_document_id(document_id)
-        if not doc:
-            bound_log.error("document not found")
-            return
+            doc_id = doc["id"]
+            extracted = doc.get("extracted") or {}
 
-        # doc is always a raw dict from the repository
-        extracted = doc.get("extracted") or {}
+            customer_raw = await _fetch_customer(session, customer_id)
+            if not customer_raw:
+                bound_log.error("customer not found", customer_id=customer_id)
+                return
 
-        customer_raw = await db["customers"].find_one({"CUSTOMER": customer_id})
-        if not customer_raw:
-            bound_log.error("customer not found", customer_id=customer_id)
-            return
-        customer_raw.pop("_id", None)
+            payload_dict = _build_so_payload(extracted, customer_raw)
+            payload = SOPayload(**payload_dict)
 
-        payload_dict = _build_so_payload(extracted, customer_raw)
-        payload = SOPayload(**payload_dict)
+            await doc_repo.update_status(doc_id, DocumentStatus.POSTING)
+            await session.commit()
 
-        await db["documents"].update_one(
-            {"document_id": document_id},
-            {"$set": {"status": str(DocumentStatus.POSTING)}},
-        )
+            sap = get_sap_service()
+            result = await sap.create_sales_order(payload)
 
-        sap = get_sap_service()
-        result = await sap.create_sales_order(payload)
+            bound_log.info("SO create response",
+                           sales_order=result.sales_order_number,
+                           success=result.success)
 
-        bound_log.info("SO create response",
-                       sales_order=result.sales_order_number,
-                       success=result.success,
-                       message=result.message)
+            return_msgs = result.sap_response.get("RETURN") or []
+            so_posting = {
+                "posted_at":          datetime.now(UTC).isoformat(),
+                "payload_sent":       payload_dict,
+                "sales_order_number": result.sales_order_number,
+                "sap_response":       result.sap_response,
+                "return_messages":    return_msgs,
+                "errors":             [m for m in return_msgs if m.get("TYPE") == "E"],
+                "warnings":           [m for m in return_msgs if m.get("TYPE") == "W"],
+                "successes":          [m for m in return_msgs if m.get("TYPE") == "S"],
+                "status":             "success" if result.success else "failed",
+                "message":            result.message,
+            }
 
-        # Parse RETURN messages for display
-        return_msgs = result.sap_response.get("RETURN") or []
-        errors   = [m for m in return_msgs if m.get("TYPE") == "E"]
-        warnings = [m for m in return_msgs if m.get("TYPE") == "W"]
-        successes = [m for m in return_msgs if m.get("TYPE") == "S"]
+            new_status = DocumentStatus.POSTED.value if result.success else DocumentStatus.VALIDATED.value
+            await doc_repo.update(doc_id, {"so_posting": so_posting, "status": new_status})
+            await session.commit()
+            bound_log.info("SO create saved", status=so_posting["status"])
 
-        so_posting = {
-            "posted_at": datetime.now(UTC).isoformat(),
-            "payload_sent": payload_dict,
-            "sales_order_number": result.sales_order_number,
-            "sap_response": result.sap_response,
-            "return_messages": return_msgs,
-            "errors": errors,
-            "warnings": warnings,
-            "successes": successes,
-            "status": "success" if result.success else "failed",
-            "message": result.message,
-        }
-
-        new_status = str(DocumentStatus.POSTED) if result.success else str(DocumentStatus.VALIDATED)
-
-        await db["documents"].update_one(
-            {"document_id": document_id},
-            {"$set": {"so_posting": so_posting, "status": new_status}},
-        )
-        bound_log.info("SO create saved", status=so_posting["status"], sales_order=result.sales_order_number)
-
-    except Exception as exc:
-        bound_log.error("SO create exception", error=str(exc), traceback=_tb.format_exc())
-        if db is not None:
+        except Exception as exc:
+            bound_log.error("SO create exception", error=str(exc), traceback=_tb.format_exc())
             try:
-                await db["documents"].update_one(
-                    {"document_id": document_id},
-                    {"$set": {
-                        "status": str(DocumentStatus.VALIDATED),
+                doc2 = await doc_repo.find_by_document_id(document_id)
+                if doc2:
+                    await doc_repo.update(doc2["id"], {
+                        "status": DocumentStatus.VALIDATED.value,
                         "so_posting": {
-                            "status": "failed",
-                            "message": str(exc),
+                            "status":     "failed",
+                            "message":    str(exc),
                             "sap_response": {},
-                            "posted_at": datetime.now(UTC).isoformat(),
+                            "posted_at":  datetime.now(UTC).isoformat(),
                         },
-                    }},
-                )
+                    })
+                    await session.commit()
             except Exception:
                 pass
