@@ -8,6 +8,8 @@ request.state.user is already set and role-aware limits are possible.
 
 Whitelisted paths skip token verification entirely.
 """
+import json
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 import structlog
@@ -32,7 +34,6 @@ _AUTH_WHITELIST = frozenset({
 })
 
 # Prefixes that are always public (Swagger UI assets, WebSocket endpoints)
-# WebSocket endpoints authenticate via query-param token, not Authorization header.
 _AUTH_WHITELIST_PREFIXES = ("/api/docs", "/api/redoc", "/openapi", "/api/ws")
 
 
@@ -42,12 +43,8 @@ def _is_whitelisted(path: str) -> bool:
     return any(path.startswith(prefix) for prefix in _AUTH_WHITELIST_PREFIXES)
 
 
-def _error_body(
-    code: str,
-    message: str,
-    request_id: str,
-) -> dict[str, Any]:
-    return {
+def _json_error(code: str, message: str, request_id: str, status: int) -> Response:
+    body = json.dumps({
         "error": {
             "code": code,
             "message": message,
@@ -55,26 +52,40 @@ def _error_body(
             "request_id": request_id,
             "timestamp": datetime.now(UTC).isoformat(),
         }
-    }
+    })
+    return Response(content=body, status_code=status, media_type="application/json")
 
 
 # ---------------------------------------------------------------------------
 # Middleware
 # ---------------------------------------------------------------------------
 
-
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: object) -> Response:
-        # AUTH BYPASS — attach a hardcoded dev user so all routes work without login
-        request.state.user = TokenPayload(
-            sub="000000000000000000000001",
-            email="admin@docparser.com",
-            role="admin",
-            type="access",
-            jti="dev",
-            iat=0,
-            exp=9999999999,
-        )
+        if _is_whitelisted(request.url.path):
+            return await call_next(request)  # type: ignore[arg-type]
+
+        request_id = getattr(request.state, "request_id", "")
+
+        auth_header: str = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return _json_error(
+                "NOT_AUTHENTICATED",
+                "Authorization header missing or malformed.",
+                request_id, 401,
+            )
+
+        token = auth_header[7:].strip()
+
+        from src.services.auth_service import auth_service
+        try:
+            payload = await auth_service.verify_token(token, expected_type="access")
+        except AuthError as exc:
+            return _json_error(exc.error_code, exc.message, request_id, exc.status_code)
+        except Exception:
+            return _json_error("TOKEN_INVALID", "Invalid token.", request_id, 401)
+
+        request.state.user = payload
         return await call_next(request)  # type: ignore[arg-type]
 
 
@@ -82,16 +93,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
 # FastAPI dependency: get_current_user
 # ---------------------------------------------------------------------------
 
-
 async def get_current_user(request: Request) -> TokenPayload:
-    """Read the TokenPayload attached by AuthMiddleware.
-
-    Never reaches here if the middleware rejected the token — the 401 was
-    already returned before the route handler was invoked.
-    """
+    """Read the TokenPayload attached by AuthMiddleware."""
     user: TokenPayload | None = getattr(request.state, "user", None)
     if user is None:
-        # Defensive fallback for routes mounted outside middleware scope
         raise AuthError(
             "Not authenticated",
             error_code="NOT_AUTHENTICATED",
@@ -107,17 +112,8 @@ CurrentUser = Annotated[TokenPayload, Depends(get_current_user)]
 # FastAPI dependency factory: require_role
 # ---------------------------------------------------------------------------
 
-
 def require_role(*roles: str) -> Any:
-    """Return a Depends() that enforces the caller has one of the given roles.
-
-    Usage::
-
-        @router.delete("/documents/{id}")
-        async def delete_doc(
-            _: Annotated[TokenPayload, require_role("admin", "manager")],
-        ) -> ...:
-    """
+    """Return a Depends() that enforces the caller has one of the given roles."""
     async def _checker(
         current_user: Annotated[TokenPayload, Depends(get_current_user)],
     ) -> TokenPayload:

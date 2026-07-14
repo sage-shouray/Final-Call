@@ -2,10 +2,10 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Upload, History, Clock,
   FileText, ClipboardList, FileCheck, Package, Truck,
-  Settings, BarChart2, ChevronLeft, ChevronRight,
+  Settings, BarChart2, ChevronLeft, ChevronRight, ShieldCheck, LogOut, Users,
 } from 'lucide-react';
 import { useUIStore } from '@/store/uiStore';
-import { useAuthStore } from '@/store/authStore';
+import { useAuthStore, logoutUser } from '@/store/authStore';
 import { useDashboardMetrics } from '@/hooks/useDashboardMetrics';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { cn } from '@/lib/cn';
@@ -115,43 +115,49 @@ export function Sidebar() {
 
   const { data: metrics } = useDashboardMetrics();
 
+  const role = user?.role ?? 'operator';
+  const isManager = role === 'manager' || role === 'admin';
+
   const sections: NavSection[] = [
     {
       section: 'Workspace',
       items: [
-        {
+        // Dashboard only for manager+ (operators just upload & view)
+        ...( isManager ? [{
           label: 'Dashboard',
           to:    '/dashboard',
           icon:  LayoutDashboard,
           count: metrics?.total_processed,
-        },
+        }] : []),
         { label: 'Upload Document', to: '/upload',    icon: Upload },
         { label: 'History',         to: '/documents', icon: History },
-        {
+        ...( isManager ? [{
           label: 'Pending Review',
           to:    '/documents?status=validated',
           icon:  Clock,
           count: metrics?.pending_review,
-        },
+        }] : []),
       ],
     },
     {
       section: 'Document Types',
       items: [
         { label: 'Vendor Invoice',   to: '/upload?type=vendor_invoice',   icon: FileText },
-        { label: 'Sales Order',      to: '/upload?type=sales_order',      icon: ClipboardList, comingSoon: false },
-        { label: 'Payment Advice',   to: '/upload?type=payment_advice',   icon: FileCheck,    comingSoon: false },
-        { label: 'Goods Receipt',    to: '/upload?type=goods_receipt',    icon: Package,      comingSoon: false },
-        { label: 'Freight Invoice',  to: '/upload?type=freight_invoice',  icon: Truck,        comingSoon: false },
+        { label: 'Sales Order',      to: '/upload?type=sales_order',      icon: ClipboardList },
+        { label: 'Payment Advice',   to: '/upload?type=payment_advice',   icon: FileCheck },
+        { label: 'Goods Receipt',    to: '/upload?type=goods_receipt',    icon: Package },
+        { label: 'Freight Invoice',  to: '/upload?type=freight_invoice',  icon: Truck },
       ],
     },
-    {
+    // System section — manager and above only
+    ...( isManager ? [{
       section: 'System',
       items: [
-        { label: 'Reports',  to: '/reports',  icon: BarChart2,       comingSoon: false },
-        { label: 'Settings', to: '/settings', icon: Settings,        comingSoon: false },
+        { label: 'Team',     to: '/team',     icon: Users,     comingSoon: false },
+        { label: 'Reports',  to: '/reports',  icon: BarChart2, comingSoon: false },
+        { label: 'Settings', to: '/settings', icon: Settings,  comingSoon: false },
       ],
-    },
+    }] : []),
   ];
 
   const w = sidebarCollapsed ? 'w-16' : 'w-60';
@@ -206,25 +212,64 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* User profile */}
+      {/* Admin Panel button — only for admin role */}
+      {user?.role === 'admin' && (
+        <div className={cn('shrink-0 border-t border-neutral-100 px-2 py-2 dark:border-neutral-800', sidebarCollapsed && 'flex justify-center')}>
+          {sidebarCollapsed ? (
+            <Tooltip content="Admin Panel" side="right">
+              <button onClick={() => navigate('/admin')}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-950 transition-colors">
+                <ShieldCheck className="h-5 w-5" />
+              </button>
+            </Tooltip>
+          ) : (
+            <button onClick={() => navigate('/admin')}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-violet-700 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-950 transition-colors">
+              <ShieldCheck className="h-4 w-4 shrink-0" />
+              Admin Panel
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* User profile + logout */}
       <div className={cn(
-        'shrink-0 border-t border-neutral-100 px-3 py-3 dark:border-neutral-800',
-        sidebarCollapsed && 'flex justify-center px-2',
+        'shrink-0 border-t border-neutral-100 px-2 py-2 dark:border-neutral-800',
+        sidebarCollapsed ? 'flex flex-col items-center gap-1' : 'space-y-1',
       )}>
         {sidebarCollapsed ? (
-          <Tooltip content={user?.name ?? 'User'} side="right">
-            <span>
-              <Avatar name={user?.name ?? 'U'} />
-            </span>
-          </Tooltip>
+          <>
+            <Tooltip content={`${user?.name ?? 'User'} (${user?.role ?? ''})`} side="right">
+              <span>
+                <Avatar name={user?.name ?? 'U'} />
+              </span>
+            </Tooltip>
+            <Tooltip content="Logout" side="right">
+              <button
+                onClick={() => logoutUser().then(() => navigate('/login'))}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950 dark:hover:text-red-400 transition-colors"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </Tooltip>
+          </>
         ) : (
-          <div className="flex items-center gap-2.5 rounded-lg px-1 py-1.5">
-            <Avatar name={user?.name ?? 'U'} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-neutral-800 dark:text-neutral-200">{user?.name ?? '—'}</p>
-              <p className="truncate text-xs capitalize text-neutral-400 dark:text-neutral-500">{user?.role ?? '—'}</p>
+          <>
+            <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
+              <Avatar name={user?.name ?? 'U'} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-neutral-800 dark:text-neutral-200">{user?.name ?? '—'}</p>
+                <p className="truncate text-xs capitalize text-neutral-400 dark:text-neutral-500">{user?.role ?? '—'}</p>
+              </div>
             </div>
-          </div>
+            <button
+              onClick={() => logoutUser().then(() => navigate('/login'))}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-neutral-500 hover:bg-red-50 hover:text-red-600 dark:text-neutral-400 dark:hover:bg-red-950 dark:hover:text-red-400 transition-colors"
+            >
+              <LogOut className="h-4 w-4 shrink-0" />
+              Logout
+            </button>
+          </>
         )}
       </div>
 

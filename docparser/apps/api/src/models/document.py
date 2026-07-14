@@ -320,7 +320,9 @@ class DocumentRow(Base, TimestampMixin):
     so_posting:       Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     f26_simulation:   Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     f26_posting:      Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    retry_count:      Mapped[int]       = mapped_column(Integer, nullable=False, default=0)
+    tenant_id:        Mapped[str | None]  = mapped_column(String, nullable=True)
+    page_count:       Mapped[int]         = mapped_column(Integer, nullable=False, default=0)
+    retry_count:      Mapped[int]         = mapped_column(Integer, nullable=False, default=0)
     error_log:        Mapped[list]      = mapped_column(JSONB, nullable=False, default=list)
 
     __table_args__ = (
@@ -353,6 +355,8 @@ class DocumentRow(Base, TimestampMixin):
             "so_posting":      self.so_posting,
             "f26_simulation":  self.f26_simulation,
             "f26_posting":     self.f26_posting,
+            "tenant_id":       self.tenant_id,
+            "page_count":      self.page_count,
             "retry_count":     self.retry_count,
             "error_log":       self.error_log or [],
             "created_at":      self.created_at,

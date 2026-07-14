@@ -37,6 +37,7 @@ class UserRow(Base, TimestampMixin):
     role:            Mapped[str]          = mapped_column(String, nullable=False, default="operator")
     is_active:       Mapped[bool]         = mapped_column(Boolean, nullable=False, default=True)
     last_login:      Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    tenant_id:       Mapped[str | None]   = mapped_column(String, nullable=True)
 
     def to_dict(self, *, include_password: bool = False) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -45,9 +46,10 @@ class UserRow(Base, TimestampMixin):
             "name":       self.name,
             "role":       self.role,
             "is_active":  self.is_active,
-            "last_login": self.last_login,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
+            "tenant_id":  self.tenant_id,
+            "last_login": self.last_login.isoformat() if self.last_login else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
         if include_password:
             d["hashed_password"] = self.hashed_password

@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: Annotated[int, Field(ge=5, le=1440)] = 480   # 8 hours
     REFRESH_TOKEN_EXPIRE_DAYS: Annotated[int, Field(ge=1, le=90)] = 7
 
+    # Super Admin — seeded on startup from env, never hardcoded in source
+    SUPER_ADMIN_EMAIL: str = Field(default="admin@sagetl.com")
+    SUPER_ADMIN_NAME: str  = Field(default="Super Admin")
+    SUPER_ADMIN_PASSWORD: SecretStr = Field(default="Admin@1234")
+
     # ── Rate limiting ─────────────────────────────────────────────────────
     RATE_LIMIT_DEFAULT: Annotated[int, Field(ge=1)] = 100
     RATE_LIMIT_ADMIN: Annotated[int, Field(ge=1)] = 300

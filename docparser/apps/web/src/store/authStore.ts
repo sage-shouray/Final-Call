@@ -52,7 +52,7 @@ export const useAuthStore = create<AuthStore>()(
     }),
     {
       name:    'docparser-auth',   // must match AUTH_KEY in api.ts
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => sessionStorage),  // sessionStorage: cleared on new tab/window
       partialize: (state) => ({
         user:         state.user,
         accessToken:  state.accessToken,

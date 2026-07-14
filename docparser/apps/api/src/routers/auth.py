@@ -1,6 +1,9 @@
 """Authentication endpoints."""
+from typing import Any
+
 import structlog
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
+from sqlalchemy import select
 
 from src.exceptions import AuthError, NotFoundError
 from src.middleware.auth import CurrentUser
@@ -38,7 +41,10 @@ async def login(body: LoginRequest, request: Request) -> LoginResponse:
         raise AuthError("This account has been deactivated", error_code="ACCOUNT_INACTIVE", status_code=401)
 
     user_id = str(user_doc["id"])
-    tokens = await auth_service.create_tokens(user_id, user_doc["email"], user_doc["role"])
+    tokens = await auth_service.create_tokens(
+        user_id, user_doc["email"], user_doc["role"],
+        user_doc.get("tenant_id"),
+    )
 
     async with AsyncSessionLocal() as session:
         await UserRepository(session).update_last_login(user_id)
@@ -90,3 +96,135 @@ async def me(current_user: CurrentUser) -> UserPublic:
         role=user_doc["role"],
         is_active=user_doc["is_active"],
     )
+
+
+@router.put("/me/password", summary="Change own password")
+async def change_password(body: dict[str, Any], current_user: CurrentUser) -> dict[str, str]:
+    old_pw  = (body.get("old_password") or "").strip()
+    new_pw  = (body.get("new_password") or "").strip()
+    if not old_pw or not new_pw:
+        raise HTTPException(status_code=422, detail="old_password and new_password are required.")
+    if len(new_pw) < 8:
+        raise HTTPException(status_code=422, detail="New password must be at least 8 characters.")
+
+    from src.database import AsyncSessionLocal
+    from src.models.user import UserRow
+    async with AsyncSessionLocal() as session:
+        user = (await session.execute(select(UserRow).where(UserRow.id == current_user.sub))).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found.")
+        if not auth_service.verify_password(old_pw, user.hashed_password):
+            raise HTTPException(status_code=400, detail="Current password is incorrect.")
+        user.hashed_password = auth_service.hash_password(new_pw)
+        await session.commit()
+    return {"message": "Password updated successfully."}
+
+
+# ---------------------------------------------------------------------------
+# Manager — user management within own company
+# Managers can list, create, and toggle users only in their own tenant.
+# ---------------------------------------------------------------------------
+
+def _require_manager(user: CurrentUser) -> None:
+    if user.role not in ("admin", "manager"):
+        raise HTTPException(status_code=403, detail="Manager access required.")
+
+def _require_own_tenant(user: CurrentUser) -> str:
+    """Returns tenant_id or raises if user has no tenant (super-admin has none)."""
+    tid = getattr(user, "tenant_id", None)
+    if not tid:
+        raise HTTPException(status_code=400, detail="No tenant associated with this account.")
+    return tid
+
+
+@router.get("/team", summary="Manager: list users in own company")
+async def list_team(current_user: CurrentUser) -> list[dict[str, Any]]:
+    _require_manager(current_user)
+    from src.database import AsyncSessionLocal
+    from src.models.user import UserRow
+    from sqlalchemy import func
+    from src.models.document import DocumentRow
+
+    # super-admin can't call this (they use /admin/companies/:id/users)
+    tenant_id = _require_own_tenant(current_user)
+
+    async with AsyncSessionLocal() as session:
+        users = (await session.execute(
+            select(UserRow).where(UserRow.tenant_id == tenant_id).order_by(UserRow.email)
+        )).scalars().all()
+        result = []
+        for u in users:
+            doc_count = (await session.execute(
+                select(func.count()).select_from(DocumentRow).where(DocumentRow.uploaded_by == u.id)
+            )).scalar() or 0
+            d = u.to_dict()
+            d["doc_count"] = doc_count
+            result.append(d)
+        return result
+
+
+@router.post("/team", status_code=201, summary="Manager: add user to own company")
+async def add_team_member(body: dict[str, Any], current_user: CurrentUser) -> dict[str, Any]:
+    _require_manager(current_user)
+    tenant_id = _require_own_tenant(current_user)
+
+    email    = (body.get("email") or "").strip().lower()
+    name     = (body.get("name") or "").strip()
+    role     = body.get("role", "operator")
+    password = body.get("password", "")
+
+    if not email or not name or not password:
+        raise HTTPException(status_code=422, detail="email, name, and password are required.")
+    if len(password) < 8:
+        raise HTTPException(status_code=422, detail="Password must be at least 8 characters.")
+    # managers cannot create other managers or admins
+    if current_user.role == "manager" and role not in ("operator",):
+        raise HTTPException(status_code=403, detail="Managers can only create operator accounts.")
+
+    from src.database import AsyncSessionLocal
+    from src.models.user import UserRow
+    async with AsyncSessionLocal() as session:
+        existing = (await session.execute(select(UserRow).where(UserRow.email == email))).scalar_one_or_none()
+        if existing:
+            raise HTTPException(status_code=409, detail="Email already in use.")
+        user = UserRow(
+            email=email, name=name, role=role,
+            hashed_password=auth_service.hash_password(password),
+            tenant_id=tenant_id, is_active=True,
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        log.info("team member added", by=current_user.sub, email=email, tenant=tenant_id)
+        return user.to_dict()
+
+
+@router.put("/team/{user_id}", summary="Manager: update user in own company")
+async def update_team_member(user_id: str, body: dict[str, Any], current_user: CurrentUser) -> dict[str, Any]:
+    _require_manager(current_user)
+    tenant_id = _require_own_tenant(current_user)
+
+    from src.database import AsyncSessionLocal
+    from src.models.user import UserRow
+    async with AsyncSessionLocal() as session:
+        user = (await session.execute(
+            select(UserRow).where(UserRow.id == user_id, UserRow.tenant_id == tenant_id)
+        )).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found in your company.")
+        # managers cannot promote to manager/admin
+        if "role" in body and current_user.role == "manager" and body["role"] not in ("operator",):
+            raise HTTPException(status_code=403, detail="Managers cannot assign manager or admin roles.")
+        for field in ("name", "role"):
+            if field in body:
+                setattr(user, field, body[field])
+        if "is_active" in body:
+            user.is_active = bool(body["is_active"])
+        # optional password reset by manager
+        if body.get("new_password"):
+            if len(body["new_password"]) < 8:
+                raise HTTPException(status_code=422, detail="Password must be at least 8 characters.")
+            user.hashed_password = auth_service.hash_password(body["new_password"])
+        await session.commit()
+        await session.refresh(user)
+        return user.to_dict()

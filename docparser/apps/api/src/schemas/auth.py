@@ -43,10 +43,11 @@ class RefreshResponse(BaseModel):
 class TokenPayload(BaseModel):
     """Decoded JWT payload — attached to request.state.user by AuthMiddleware."""
 
-    sub: str    # hex ObjectId of the user
+    sub: str              # user id
     email: str
     role: str
-    type: str   # "access" | "refresh"
-    jti: str    # JWT ID used for blacklisting
-    iat: int    # issued-at unix timestamp
-    exp: int    # expiry unix timestamp
+    type: str             # "access" | "refresh"
+    jti: str              # JWT ID used for blacklisting
+    iat: int              # issued-at unix timestamp
+    exp: int              # expiry unix timestamp
+    tenant_id: str | None = None   # None for super-admin

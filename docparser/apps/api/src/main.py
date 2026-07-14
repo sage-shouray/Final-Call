@@ -81,6 +81,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         log.warning("Redis unavailable — token blacklisting disabled", error=str(exc))
 
+    # Seed super-admin from env (idempotent)
+    try:
+        from src.utils.seed import seed_super_admin
+        await seed_super_admin()
+    except Exception as exc:
+        log.warning("Super-admin seed failed (non-fatal)", error=str(exc))
+
     # Start background workers in the FastAPI event loop
     from src.workers.change_stream_worker import start_change_stream_worker
     from src.workers.event_consumer import start_event_consumer
@@ -178,6 +185,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 from src.routers import auth, customers, dashboard, documents, health, websocket  # noqa: E402
+from src.routers import admin  # noqa: E402
 
 app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
@@ -185,3 +193,4 @@ app.include_router(documents.router, prefix="/api")
 app.include_router(customers.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(websocket.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")

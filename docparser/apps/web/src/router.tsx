@@ -2,12 +2,23 @@ import { lazy, Suspense } from 'react';
 import {
   createBrowserRouter,
   Navigate,
+  Outlet,
   type RouteObject,
 } from 'react-router-dom';
-import { AppLayout } from '@/components/layout/AppLayout';
+import { AppLayout }   from '@/components/layout/AppLayout';
+import { AdminLayout } from '@/components/layout/AdminLayout';
 import { Spinner }     from '@/components/ui/Spinner';
+import { useAuthStore } from '@/store/authStore';
 
 // Lazy-loaded pages
+const AdminPage           = lazy(() => import('@/pages/AdminPage'));
+const AdminCompanyPage    = lazy(() => import('@/pages/AdminCompanyPage'));
+const AdminCompanyNewPage = lazy(() => import('@/pages/AdminCompanyNewPage'));
+const AdminBillingPage    = lazy(() => import('@/pages/AdminBillingPage'));
+const AdminActivityPage   = lazy(() => import('@/pages/AdminActivityPage'));
+
+const TeamPage           = lazy(() => import('@/pages/TeamPage'));
+
 const LoginPage          = lazy(() => import('@/pages/LoginPage'));
 const DashboardPage      = lazy(() => import('@/pages/DashboardPage'));
 const UploadPage         = lazy(() => import('@/pages/UploadPage'));
@@ -26,23 +37,33 @@ function PageFallback() {
 }
 
 function ProtectedRoute() {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <AppLayout />;
 }
 
+function AdminRoute() {
+  const { isAuthenticated, user } = useAuthStore((s) => ({ isAuthenticated: s.isAuthenticated, user: s.user }));
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (user?.role !== 'admin') return <Navigate to="/dashboard" replace />;
+  return <AdminLayout />;
+}
+
 function defaultLandingPath(): string {
-  try {
-    const raw = localStorage.getItem('uvira-app-prefs');
-    if (raw) {
-      const prefs = JSON.parse(raw) as { defaultView?: string };
-      if (prefs.defaultView === 'documents') return '/documents';
-      if (prefs.defaultView === 'upload')    return '/upload';
-    }
-  } catch { /* ignore */ }
+  // Role-aware landing: operators go straight to upload, managers to dashboard
+  const role = useAuthStore.getState().user?.role ?? 'operator';
+  if (role === 'operator') return '/upload';
   return '/dashboard';
 }
 
+// Redirect already-logged-in users away from /login
 function GuestRoute() {
-  return <Navigate to="/dashboard" replace />;
+  const { isAuthenticated, user } = useAuthStore((s) => ({ isAuthenticated: s.isAuthenticated, user: s.user }));
+  if (isAuthenticated) {
+    // Admins land on the admin panel; everyone else on dashboard
+    return <Navigate to={user?.role === 'admin' ? '/admin' : '/dashboard'} replace />;
+  }
+  return <Outlet />;
 }
 
 const routes: RouteObject[] = [
@@ -104,6 +125,46 @@ const routes: RouteObject[] = [
             <SettingsPage />
           </Suspense>
         ),
+      },
+      {
+        path: '/team',
+        element: (
+          <Suspense fallback={<PageFallback />}>
+            <TeamPage />
+          </Suspense>
+        ),
+      },
+    ],
+  },
+
+  // Admin panel — separate layout
+  {
+    path: '/admin',
+    element: <AdminRoute />,
+    children: [
+      {
+        index: true,
+        element: <Suspense fallback={<PageFallback />}><AdminPage /></Suspense>,
+      },
+      {
+        path: 'companies',
+        element: <Navigate to="/admin" replace />,
+      },
+      {
+        path: 'companies/new',
+        element: <Suspense fallback={<PageFallback />}><AdminCompanyNewPage /></Suspense>,
+      },
+      {
+        path: 'companies/:id',
+        element: <Suspense fallback={<PageFallback />}><AdminCompanyPage /></Suspense>,
+      },
+      {
+        path: 'billing',
+        element: <Suspense fallback={<PageFallback />}><AdminBillingPage /></Suspense>,
+      },
+      {
+        path: 'activity',
+        element: <Suspense fallback={<PageFallback />}><AdminActivityPage /></Suspense>,
       },
     ],
   },

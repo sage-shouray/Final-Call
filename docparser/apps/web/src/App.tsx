@@ -1,10 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { RouterProvider } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 import { router }      from './router';
 import { queryClient } from './lib/queryClient';
 import { useUIStore }  from './store/uiStore';
+import { useAuthStore } from './store/authStore';
+import { api } from './lib/api';
 
 const SETTINGS_KEY = 'uvira-app-prefs';
 
@@ -34,6 +36,10 @@ function applyStoredPrefs() {
 }
 
 applyStoredPrefs();
+
+// One-time migration: clear any auth tokens left in localStorage from before
+// the switch to sessionStorage, so old sessions can't bypass login.
+try { localStorage.removeItem('docparser-auth'); } catch { /* ignore */ }
 
 // Keep in sync if the OS theme changes while the tab is open
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -65,11 +71,48 @@ function KeyboardShortcuts() {
   return null;
 }
 
+// Validates the stored token against the server on every app load.
+// If the token is missing, expired, or rejected → force logout so the
+// login page is shown instead of a broken authenticated state.
+function SessionGuard({ children }: { children: React.ReactNode }) {
+  const [checked, setChecked] = useState(false);
+  const { isAuthenticated, logout } = useAuthStore();
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setChecked(true);
+      return;
+    }
+    // Verify the stored token is still accepted by the server
+    api.get('/auth/me')
+      .then(() => setChecked(true))
+      .catch(() => {
+        // Token rejected (expired / invalid) — clear local state and show login
+        logout();
+        setChecked(true);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);   // run once on mount only
+
+  if (!checked) {
+    // Show a blank screen while we verify — prevents a flash of protected content
+    return (
+      <div className="flex h-screen items-center justify-center bg-neutral-50 dark:bg-neutral-950">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-neutral-300 border-t-indigo-600" />
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <KeyboardShortcuts />
-      <RouterProvider router={router} />
+      <SessionGuard>
+        <RouterProvider router={router} />
+      </SessionGuard>
       <Toaster
         position="bottom-right"
         gutter={8}

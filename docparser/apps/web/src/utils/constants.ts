@@ -83,7 +83,7 @@ export const API = {
 
 export const APP_NAME    = 'Uvira.ai';
 export const APP_VERSION = '1.0';
-export const APP_COMPANY = 'SSDN Technologies';
+export const APP_COMPANY = 'Sage Technologies';
 
 export const PAGE_SIZE_OPTIONS = [20, 50, 100] as const;
 export const DEFAULT_PAGE_SIZE = 20;

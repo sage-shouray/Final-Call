@@ -42,12 +42,13 @@ class AuthService:
         role: str,
         token_type: str,
         expire_delta: timedelta,
+        tenant_id: str | None = None,
     ) -> tuple[str, str, int]:
         """Return (encoded_jwt, jti, exp_unix_timestamp)."""
         now = datetime.now(UTC)
         jti = str(uuid4())
         exp = int((now + expire_delta).timestamp())
-        payload = {
+        payload: dict = {
             "sub": sub,
             "email": email,
             "role": role,
@@ -55,6 +56,7 @@ class AuthService:
             "jti": jti,
             "iat": int(now.timestamp()),
             "exp": exp,
+            "tenant_id": tenant_id,
         }
         token = jwt.encode(
             payload,
@@ -64,20 +66,17 @@ class AuthService:
         return token, jti, exp
 
     async def create_tokens(
-        self, user_id: str, email: str, role: str
+        self, user_id: str, email: str, role: str, tenant_id: str | None = None
     ) -> dict[str, str | int]:
-        """Create a fresh access + refresh token pair.
-
-        Returns a dict matching LoginResponse / RefreshResponse schemas.
-        """
-        access_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        """Create a fresh access + refresh token pair."""
+        access_delta  = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         refresh_delta = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
 
         access_token, _, _ = self._build_token(
-            user_id, email, role, ACCESS_TOKEN_TYPE, access_delta
+            user_id, email, role, ACCESS_TOKEN_TYPE, access_delta, tenant_id
         )
         refresh_token, _, _ = self._build_token(
-            user_id, email, role, REFRESH_TOKEN_TYPE, refresh_delta
+            user_id, email, role, REFRESH_TOKEN_TYPE, refresh_delta, tenant_id
         )
         return {
             "access_token": access_token,
@@ -153,7 +152,7 @@ class AuthService:
         # Blacklist the consumed token so it cannot be replayed
         await self.blacklist_token(payload.jti, payload.exp)
 
-        return await self.create_tokens(payload.sub, payload.email, payload.role)
+        return await self.create_tokens(payload.sub, payload.email, payload.role, payload.tenant_id)
 
     async def blacklist_token(self, jti: str, expires_at: int) -> None:
         """Store jti in Redis with TTL = remaining token lifetime."""
