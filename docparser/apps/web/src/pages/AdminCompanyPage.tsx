@@ -4,8 +4,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Users, Globe, IndianRupee, FileText,
   Plus, Edit2, Check, X, TestTube2, CheckCircle2, XCircle,
-  Save, UserPlus,
+  Save, UserPlus, Trash2, KeyRound, Circle,
 } from 'lucide-react';
+
+const PASSWORD_MIN_LENGTH = 8;
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 
@@ -33,6 +35,17 @@ interface Document {
   document_id: string; type: string; tcode: string; status: string;
   page_count: number; uploaded_at: string; uploaded_by: string;
 }
+interface BillingLineItem {
+  tcode: string; label: string; doc_count: number; price_each: number; amount: number;
+}
+interface BillingRecord {
+  id: string; period_month: number; period_year: number; tcode: string;
+  doc_count: number; price_each: number; total_amount: number; status: string;
+}
+interface Billing {
+  tenant_id: string; period_month: number; period_year: number;
+  line_items: BillingLineItem[]; total_due: number; history: BillingRecord[];
+}
 
 // ── Fetch helpers ─────────────────────────────────────────────────────────────
 
@@ -41,11 +54,18 @@ const fetchApis     = (id: string) => api.get(`/admin/companies/${id}/apis`).the
 const fetchPricing  = (id: string) => api.get(`/admin/companies/${id}/pricing`).then(r => r.data as Pricing[]);
 const fetchUsers    = (id: string) => api.get(`/admin/companies/${id}/users`).then(r => r.data as CompanyUser[]);
 const fetchDocs     = (id: string) => api.get(`/admin/companies/${id}/documents?limit=50`).then(r => r.data as { documents: Document[]; total: number });
+const fetchBilling  = (id: string) => api.get(`/admin/companies/${id}/billing`).then(r => r.data as Billing);
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
 
-const TABS = ['Users', 'APIs', 'Pricing', 'Documents'] as const;
+const TABS = ['Users', 'APIs', 'Pricing', 'Documents', 'Billing'] as const;
 type Tab = typeof TABS[number];
+
+const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function fmtINR(n: number) {
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
+}
 
 function TabBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
@@ -103,10 +123,17 @@ function UsersTab({ tenantId }: { tenantId: string }) {
   const { data: users = [], isLoading } = useQuery({ queryKey: ['admin-users', tenantId], queryFn: () => fetchUsers(tenantId) });
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', role: 'operator', password: '' });
+  const [formError, setFormError] = useState('');
 
   const addUser = useMutation({
     mutationFn: (body: typeof form) => api.post(`/admin/companies/${tenantId}/users`, body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-users', tenantId] }); setShowForm(false); setForm({ name: '', email: '', role: 'operator', password: '' }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-users', tenantId] });
+      setShowForm(false);
+      setForm({ name: '', email: '', role: 'operator', password: '' });
+      setFormError('');
+    },
+    onError: (e: any) => setFormError(e?.response?.data?.detail ?? 'Failed to add user.'),
   });
 
   const toggleUser = useMutation({
@@ -121,10 +148,26 @@ function UsersTab({ tenantId }: { tenantId: string }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users', tenantId] }),
   });
 
+  const deleteUser = useMutation({
+    mutationFn: (uid: string) => api.delete(`/admin/companies/${tenantId}/users/${uid}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users', tenantId] }),
+  });
+
+  const [resetTarget, setResetTarget] = useState<CompanyUser | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetError, setResetError] = useState('');
+
+  const resetUserPassword = useMutation({
+    mutationFn: ({ uid, new_password }: { uid: string; new_password: string }) =>
+      api.put(`/admin/companies/${tenantId}/users/${uid}`, { new_password }),
+    onSuccess: () => { setResetTarget(null); setResetPassword(''); setResetError(''); },
+    onError: (e: any) => setResetError(e?.response?.data?.detail ?? 'Failed to reset password.'),
+  });
+
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <button onClick={() => setShowForm(s => !s)}
+        <button onClick={() => { setShowForm(s => !s); setFormError(''); }}
           className="flex items-center gap-2 rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700">
           <UserPlus className="h-4 w-4" /> Add User
         </button>
@@ -134,23 +177,51 @@ function UsersTab({ tenantId }: { tenantId: string }) {
         <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-800 dark:bg-violet-950/30 space-y-3">
           <p className="text-sm font-semibold text-violet-800 dark:text-violet-300">New User</p>
           <div className="grid grid-cols-2 gap-3">
-            {(['name', 'email', 'password'] as const).map(f => (
+            {(['name', 'email'] as const).map(f => (
               <input key={f} placeholder={f.charAt(0).toUpperCase() + f.slice(1)}
-                type={f === 'password' ? 'password' : 'text'}
+                type="text"
                 value={form[f]} onChange={e => setForm(p => ({ ...p, [f]: e.target.value }))}
                 className="rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white" />
             ))}
+            <div>
+              <input placeholder="Password *"
+                type="password"
+                value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                className={cn(
+                  'w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 dark:bg-neutral-800 dark:text-white',
+                  form.password.length === 0
+                    ? 'border-neutral-200 focus:ring-violet-500 dark:border-neutral-700'
+                    : form.password.length >= PASSWORD_MIN_LENGTH
+                      ? 'border-emerald-300 focus:ring-emerald-400 dark:border-emerald-700'
+                      : 'border-red-300 focus:ring-red-400 dark:border-red-700',
+                )} />
+              <p className={cn('mt-1 flex items-center gap-1.5 text-xs',
+                form.password.length === 0
+                  ? 'text-neutral-400'
+                  : form.password.length >= PASSWORD_MIN_LENGTH
+                    ? 'text-emerald-600'
+                    : 'text-red-500')}>
+                {form.password.length >= PASSWORD_MIN_LENGTH
+                  ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                  : <Circle className="h-3.5 w-3.5 shrink-0" />}
+                Password must be at least {PASSWORD_MIN_LENGTH} characters
+                <span className="text-red-500">*</span>
+              </p>
+            </div>
             <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}
               className="rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white">
               {['operator', 'manager', 'admin'].map(r => <option key={r} value={r}>{r}</option>)}
             </select>
           </div>
+          {formError && <p className="text-sm text-red-500">{formError}</p>}
           <div className="flex gap-2">
-            <button onClick={() => addUser.mutate(form)}
-              className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700">
-              <Save className="h-3.5 w-3.5" /> Save
+            <button
+              onClick={() => addUser.mutate(form)}
+              disabled={addUser.isPending || form.password.length < PASSWORD_MIN_LENGTH || !form.name || !form.email}
+              className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed">
+              <Save className="h-3.5 w-3.5" /> {addUser.isPending ? 'Saving…' : 'Save'}
             </button>
-            <button onClick={() => setShowForm(false)} className="rounded-lg px-4 py-2 text-sm text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800">Cancel</button>
+            <button onClick={() => { setShowForm(false); setFormError(''); }} className="rounded-lg px-4 py-2 text-sm text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800">Cancel</button>
           </div>
         </div>
       )}
@@ -180,16 +251,98 @@ function UsersTab({ tenantId }: { tenantId: string }) {
                 <td className="px-4 py-3"><Badge label={u.is_active ? 'Active' : 'Inactive'} green={u.is_active} /></td>
                 <td className="px-4 py-3 text-xs text-neutral-400">{u.last_login ? new Date(u.last_login).toLocaleDateString('en-IN') : '—'}</td>
                 <td className="px-4 py-3">
-                  <button onClick={() => toggleUser.mutate({ uid: u.id, active: !u.is_active })}
-                    className={cn('text-xs px-2.5 py-1 rounded-lg font-medium transition-colors',
-                      u.is_active ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100')}>
-                    {u.is_active ? 'Deactivate' : 'Activate'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => toggleUser.mutate({ uid: u.id, active: !u.is_active })}
+                      className={cn('text-xs px-2.5 py-1 rounded-lg font-medium transition-colors',
+                        u.is_active ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100')}>
+                      {u.is_active ? 'Deactivate' : 'Activate'}
+                    </button>
+                    <button
+                      onClick={() => { setResetTarget(u); setResetPassword(''); setResetError(''); }}
+                      className="flex items-center justify-center rounded-lg p-1.5 text-neutral-400 hover:bg-violet-50 hover:text-violet-600 transition-colors"
+                      title="Reset password"
+                    >
+                      <KeyRound className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => { if (confirm(`Delete user "${u.name}"? This cannot be undone.`)) deleteUser.mutate(u.id); }}
+                      className="flex items-center justify-center rounded-lg p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                      title="Delete user"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+      )}
+
+      {/* Reset password modal */}
+      {resetTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4"
+          onClick={() => setResetTarget(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-neutral-900"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-violet-50 dark:bg-violet-950/40">
+                <KeyRound className="h-5 w-5 text-violet-600" />
+              </div>
+              <button onClick={() => setResetTarget(null)} className="text-neutral-400 hover:text-neutral-600">
+                <X className="h-4.5 w-4.5" />
+              </button>
+            </div>
+            <h3 className="mt-4 text-[16px] font-bold text-neutral-900 dark:text-white">Reset password</h3>
+            <p className="mt-1 text-[13px] text-neutral-500 dark:text-neutral-400">
+              Set a new password for <span className="font-semibold">{resetTarget.name}</span> ({resetTarget.email}).
+            </p>
+            <input
+              type="text"
+              autoFocus
+              value={resetPassword}
+              onChange={e => setResetPassword(e.target.value)}
+              placeholder="New password *"
+              className={cn(
+                'mt-4 w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 dark:bg-neutral-800 dark:text-white',
+                resetPassword.length === 0
+                  ? 'border-neutral-200 focus:ring-violet-500 dark:border-neutral-700'
+                  : resetPassword.length >= PASSWORD_MIN_LENGTH
+                    ? 'border-emerald-300 focus:ring-emerald-400 dark:border-emerald-700'
+                    : 'border-red-300 focus:ring-red-400 dark:border-red-700',
+              )}
+            />
+            <p className={cn('mt-1.5 flex items-center gap-1.5 text-xs',
+              resetPassword.length === 0
+                ? 'text-neutral-400'
+                : resetPassword.length >= PASSWORD_MIN_LENGTH
+                  ? 'text-emerald-600'
+                  : 'text-red-500')}>
+              {resetPassword.length >= PASSWORD_MIN_LENGTH
+                ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                : <Circle className="h-3.5 w-3.5 shrink-0" />}
+              Password must be at least {PASSWORD_MIN_LENGTH} characters
+              <span className="text-red-500">*</span>
+            </p>
+            {resetError && <p className="mt-2 text-sm text-red-500">{resetError}</p>}
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => resetTarget && resetUserPassword.mutate({ uid: resetTarget.id, new_password: resetPassword })}
+                disabled={resetUserPassword.isPending || resetPassword.length < PASSWORD_MIN_LENGTH}
+                className="flex-1 rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {resetUserPassword.isPending ? 'Saving…' : 'Reset Password'}
+              </button>
+              <button onClick={() => setResetTarget(null)} className="rounded-xl px-4 py-2.5 text-sm text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -385,6 +538,99 @@ function DocsTab({ tenantId }: { tenantId: string }) {
   );
 }
 
+// ── Billing tab ───────────────────────────────────────────────────────────────
+
+function BillingTab({ tenantId }: { tenantId: string }) {
+  const { data, isLoading } = useQuery({ queryKey: ['admin-billing', tenantId], queryFn: () => fetchBilling(tenantId) });
+
+  if (isLoading) return <p className="text-sm text-neutral-400 py-8 text-center">Loading…</p>;
+  if (!data) return null;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">
+          Live cost for <span className="font-semibold text-neutral-700 dark:text-neutral-300">{MONTH_NAMES[data.period_month]} {data.period_year}</span> — calculated from documents posted this month × configured pricing.
+        </p>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-right dark:border-emerald-900 dark:bg-emerald-950/30">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">Due this month</p>
+          <p className="text-lg font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">{fmtINR(data.total_due)}</p>
+        </div>
+      </div>
+
+      {/* Current month line items */}
+      <div className="rounded-xl border border-neutral-200 overflow-hidden dark:border-neutral-800">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-neutral-50 dark:bg-neutral-800/50 border-b border-neutral-200 dark:border-neutral-800">
+              {['Workflow', 'TCode', 'Documents', 'Price Each', 'Amount'].map(h => (
+                <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-400">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+            {data.line_items.length === 0 ? (
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-neutral-400">No billable documents processed this month yet.</td></tr>
+            ) : data.line_items.map(li => (
+              <tr key={li.tcode} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/30">
+                <td className="px-4 py-3 font-medium text-neutral-800 dark:text-white">{li.label}</td>
+                <td className="px-4 py-3"><span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-mono dark:bg-neutral-800">{li.tcode}</span></td>
+                <td className="px-4 py-3 tabular-nums text-neutral-600 dark:text-neutral-400">{li.doc_count}</td>
+                <td className="px-4 py-3 tabular-nums text-neutral-500">{fmtINR(li.price_each)}</td>
+                <td className="px-4 py-3 tabular-nums font-semibold text-neutral-900 dark:text-white">{fmtINR(li.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+          {data.line_items.length > 0 && (
+            <tfoot>
+              <tr className="border-t-2 border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/50">
+                <td colSpan={4} className="px-4 py-3 font-semibold text-neutral-700 dark:text-neutral-300">Total due</td>
+                <td className="px-4 py-3 font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">{fmtINR(data.total_due)}</td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+
+      {/* History */}
+      {data.history.length > 0 && (
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-neutral-400">Billing History</p>
+          <div className="rounded-xl border border-neutral-200 overflow-hidden dark:border-neutral-800">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-neutral-50 dark:bg-neutral-800/50 border-b border-neutral-200 dark:border-neutral-800">
+                  {['Period', 'TCode', 'Documents', 'Amount', 'Status'].map(h => (
+                    <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-400">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                {data.history.map(h => (
+                  <tr key={h.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/30">
+                    <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">{MONTH_NAMES[h.period_month]} {h.period_year}</td>
+                    <td className="px-4 py-3"><span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-mono dark:bg-neutral-800">{h.tcode}</span></td>
+                    <td className="px-4 py-3 tabular-nums text-neutral-500">{h.doc_count}</td>
+                    <td className="px-4 py-3 tabular-nums font-semibold text-neutral-900 dark:text-white">{fmtINR(h.total_amount)}</td>
+                    <td className="px-4 py-3">
+                      <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium capitalize',
+                        h.status === 'paid'
+                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400'
+                          : 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400')}>
+                        {h.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function AdminCompanyPage() {
@@ -404,6 +650,11 @@ export default function AdminCompanyPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-company', id] }),
   });
 
+  const deleteCompany = useMutation({
+    mutationFn: () => api.delete(`/admin/companies/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-companies'] }); navigate('/admin'); },
+  });
+
   if (isLoading) return <div className="flex items-center justify-center h-64 text-neutral-400">Loading…</div>;
   if (!company) return <div className="flex items-center justify-center h-64 text-red-500">Company not found.</div>;
 
@@ -416,7 +667,9 @@ export default function AdminCompanyPage() {
           <ArrowLeft className="h-4 w-4" />
         </button>
         <div className="flex-1">
-          <h1 className="text-xl font-bold text-neutral-900 dark:text-white">{company.name}</h1>
+          <h1 className="text-xl font-bold text-neutral-900 dark:text-white">
+            <EditableCell value={company.name} onSave={v => updateCompany.mutate({ name: v })} />
+          </h1>
           <p className="text-sm text-neutral-400">{company.slug} · {company.email || 'No email set'}</p>
         </div>
         {/* Status toggle */}
@@ -427,19 +680,28 @@ export default function AdminCompanyPage() {
         >
           {['active', 'trial', 'suspended'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
         </select>
+        <button
+          onClick={() => { if (confirm(`Delete company "${company.name}"? This will permanently remove all its users, documents, pricing, and API configs. This cannot be undone.`)) deleteCompany.mutate(); }}
+          className="flex items-center gap-2 rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950/40 transition-colors"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          Delete Company
+        </button>
       </div>
 
       {/* Company info cards */}
       <div className="grid grid-cols-4 gap-3">
-        {[
-          { label: 'GSTIN', value: company.gstin || '—' },
-          { label: 'Email', value: company.email || '—' },
-          { label: 'Phone', value: company.phone || '—' },
-          { label: 'Address', value: company.address || '—' },
-        ].map(item => (
-          <div key={item.label} className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        {([
+          { key: 'gstin',   label: 'GSTIN' },
+          { key: 'email',   label: 'Email' },
+          { key: 'phone',   label: 'Phone' },
+          { key: 'address', label: 'Address' },
+        ] as const).map(item => (
+          <div key={item.key} className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
             <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">{item.label}</p>
-            <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300 truncate">{item.value}</p>
+            <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300 truncate">
+              <EditableCell value={company[item.key] || '—'} onSave={v => updateCompany.mutate({ [item.key]: v })} />
+            </p>
           </div>
         ))}
       </div>
@@ -456,6 +718,7 @@ export default function AdminCompanyPage() {
           {tab === 'APIs'      && <ApisTab    tenantId={id!} />}
           {tab === 'Pricing'   && <PricingTab tenantId={id!} />}
           {tab === 'Documents' && <DocsTab    tenantId={id!} />}
+          {tab === 'Billing'   && <BillingTab tenantId={id!} />}
         </div>
       </div>
     </div>

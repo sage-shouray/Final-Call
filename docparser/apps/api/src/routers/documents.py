@@ -34,9 +34,51 @@ from src.services.storage_service import (
 )
 from src.utils.redis_client import get_redis
 from src.utils.serializer import serialize_doc
+from src.exceptions import AuthError as _AuthError
 
 log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/documents", tags=["Documents"])
+
+
+def _tenant_ok(doc: dict, current_user) -> bool:
+    """Return True if the current user is allowed to access this document."""
+    if current_user.role == "admin" and not getattr(current_user, "tenant_id", None):
+        return True
+    doc_tenant = doc.get("tenant_id")
+    user_tenant = getattr(current_user, "tenant_id", None)
+    return doc_tenant is None or doc_tenant == user_tenant
+
+
+def _assert_tenant(doc: dict, current_user) -> None:
+    if not _tenant_ok(doc, current_user):
+        raise _AuthError(
+            "You do not have permission to access this document",
+            error_code="FORBIDDEN",
+            status_code=403,
+        )
+
+
+async def _write_doc_audit(
+    *,
+    action: str,
+    document_id: str,
+    performed_by: str,
+    details: dict | None = None,
+) -> None:
+    try:
+        from src.database import AsyncSessionLocal as _Sess
+        from src.models.audit_log import AuditLogRow
+        async with _Sess() as _s:
+            _s.add(AuditLogRow(
+                document_id=document_id,
+                action=action,
+                performed_by=performed_by,
+                ip_address="",
+                details=details or {},
+            ))
+            await _s.commit()
+    except Exception as _exc:
+        log.warning("doc audit log write failed", error=str(_exc))
 
 
 def _generate_document_id() -> str:
@@ -90,6 +132,7 @@ async def upload_document(
         "status":          DocumentStatus.UPLOADED.value,
         "uploaded_by":     current_user.sub,
         "uploaded_at":     datetime.now(UTC),
+        "tenant_id":       getattr(current_user, "tenant_id", None),
         "file": {
             "original_name": filename,
             "s3_key":        s3_key,
@@ -152,6 +195,12 @@ async def upload_document(
             log.error("OCR background task crashed", document_id=document_id, error=str(exc), exc_info=True)
 
     _asyncio.create_task(_ocr_with_logging(), name=f"ocr-{document_id}")
+    _asyncio.create_task(_write_doc_audit(
+        action="document.uploaded",
+        document_id=document_id,
+        performed_by=current_user.sub,
+        details={"type": doc_type.value, "filename": filename, "size": len(file_bytes)},
+    ))
     log.info("OCR task started", document_id=document_id)
 
     return DocumentUploadResponse(
@@ -185,6 +234,11 @@ async def list_documents(
         filter_query["tcode"] = tcode
     if current_user.role == "operator":
         filter_query["uploaded_by"] = current_user.sub
+
+    # Tenant isolation — non-super-admin users only see their company's documents
+    user_tenant = getattr(current_user, "tenant_id", None)
+    if user_tenant:
+        filter_query["tenant_id"] = user_tenant
 
     skip = (page - 1) * limit
 
@@ -233,6 +287,7 @@ async def get_document(document_id: str, current_user: CurrentUser) -> DocumentR
     if not doc:
         raise NotFoundError(f"Document '{document_id}' not found", error_code="DOCUMENT_NOT_FOUND")
 
+    _assert_tenant(doc, current_user)
     safe = serialize_doc(doc)
     return DocumentResponse(
         id=safe.get("_id") or safe.get("id", ""),
@@ -268,6 +323,7 @@ async def get_presigned_url_endpoint(document_id: str, current_user: CurrentUser
     if not doc:
         raise NotFoundError(f"Document '{document_id}' not found", error_code="DOCUMENT_NOT_FOUND")
 
+    _assert_tenant(doc, current_user)
     s3_key: str = (doc.get("file") or {}).get("s3_key", "")
     if not s3_key:
         raise NotFoundError("File has not been uploaded yet", error_code="FILE_NOT_AVAILABLE")
@@ -291,6 +347,7 @@ async def retry_extraction(document_id: str, current_user: CurrentUser) -> dict:
         doc = await repo.find_by_document_id(document_id)
         if not doc:
             raise NotFoundError(f"Document '{document_id}' not found", error_code="DOCUMENT_NOT_FOUND")
+        _assert_tenant(doc, current_user)
         await repo.update_status(doc["id"], DocumentStatus.UPLOADED)
         await session.commit()
 
@@ -309,6 +366,7 @@ async def trigger_validation(document_id: str, current_user: CurrentUser) -> Val
 
     if not doc:
         raise NotFoundError(f"Document '{document_id}' not found", error_code="DOCUMENT_NOT_FOUND")
+    _assert_tenant(doc, current_user)
 
     current_status = doc.get("status", "")
     if current_status not in {DocumentStatus.EXTRACTED, DocumentStatus.VALIDATED, DocumentStatus.FAILED}:
@@ -347,6 +405,7 @@ async def get_validation_result(document_id: str, current_user: CurrentUser) -> 
 
     if not doc:
         raise NotFoundError(f"Document '{document_id}' not found", error_code="DOCUMENT_NOT_FOUND")
+    _assert_tenant(doc, current_user)
 
     sap_validation = doc.get("sap_validation")
     if not sap_validation:
@@ -381,6 +440,7 @@ async def post_to_miro(
         doc = await repo.find_by_document_id(document_id)
         if not doc:
             raise NotFoundError(f"Document '{document_id}' not found", error_code="DOCUMENT_NOT_FOUND")
+        _assert_tenant(doc, current_user)
 
         current_status = doc.get("status", "")
         if current_status == DocumentStatus.POSTING:
@@ -405,6 +465,11 @@ async def post_to_miro(
     import asyncio as _asyncio
     from src.workers.sap_worker import run_miro_direct
     _asyncio.create_task(run_miro_direct(document_id, current_user.sub), name=f"miro-{document_id}")
+    _asyncio.create_task(_write_doc_audit(
+        action="document.sap.miro_posted",
+        document_id=document_id,
+        performed_by=current_user.sub,
+    ))
 
     return MIROTriggerResponse(document_id=document_id, status="posting", message="MIRO posting started.")
 
@@ -424,6 +489,7 @@ async def post_to_grn(
         doc = await repo.find_by_document_id(document_id)
         if not doc:
             raise NotFoundError(f"Document '{document_id}' not found", error_code="DOCUMENT_NOT_FOUND")
+        _assert_tenant(doc, current_user)
 
         current_status = doc.get("status", "")
         if current_status == DocumentStatus.GR_POSTING:
@@ -439,6 +505,11 @@ async def post_to_grn(
     import asyncio as _asyncio
     from src.workers.migo_worker import run_migo_direct
     _asyncio.create_task(run_migo_direct(document_id, current_user.sub), name=f"migo-{document_id}")
+    _asyncio.create_task(_write_doc_audit(
+        action="document.sap.grn_posted",
+        document_id=document_id,
+        performed_by=current_user.sub,
+    ))
 
     return GRNTriggerResponse(document_id=document_id, status="gr_posting", message="GR posting started.")
 
@@ -454,6 +525,7 @@ async def post_fb60(document_id: str, form_data: dict, current_user: CurrentUser
 
     if not doc:
         raise NotFoundError(f"Document {document_id} not found")
+    _assert_tenant(doc, current_user)
 
     current_status = DocumentStatus(doc.get("status", ""))
     if current_status not in {DocumentStatus.EXTRACTED, DocumentStatus.FAILED}:
@@ -480,6 +552,7 @@ async def so_simulate(document_id: str, body: dict, current_user: CurrentUser):
 
     if not doc:
         raise NotFoundError(f"Document {document_id} not found")
+    _assert_tenant(doc, current_user)
 
     customer_id = body.get("customer_id") or ""
     if not customer_id:
@@ -503,6 +576,7 @@ async def so_create(document_id: str, body: dict, current_user: CurrentUser):
 
     if not doc:
         raise NotFoundError(f"Document {document_id} not found")
+    _assert_tenant(doc, current_user)
 
     customer_id = body.get("customer_id") or ""
     if not customer_id:
@@ -527,6 +601,7 @@ async def f26_simulate(document_id: str, current_user: CurrentUser) -> F26Simula
 
     if not doc:
         raise NotFoundError(f"Document {document_id} not found")
+    _assert_tenant(doc, current_user)
 
     current_status = DocumentStatus(doc.get("status", ""))
     if current_status not in {DocumentStatus.EXTRACTED, DocumentStatus.SIMULATED, DocumentStatus.FAILED}:
@@ -556,6 +631,7 @@ async def f26_post(document_id: str, current_user: CurrentUser) -> F26PostTrigge
 
     if not doc:
         raise NotFoundError(f"Document {document_id} not found")
+    _assert_tenant(doc, current_user)
 
     current_status = DocumentStatus(doc.get("status", ""))
     if current_status != DocumentStatus.SIMULATED:

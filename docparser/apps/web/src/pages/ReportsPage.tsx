@@ -34,7 +34,7 @@ function KpiCard({
 }) {
   return (
     <div className={cn(
-      'rounded-xl border-l-4 bg-white ring-1 ring-neutral-200/60 shadow-soft px-5 py-4',
+      'rounded-xl border-l-4 bg-white ring-1 ring-neutral-200/60 shadow-soft px-5 py-4 dark:bg-neutral-800 dark:ring-neutral-700/60',
       'dark:bg-neutral-800 dark:ring-neutral-700/60 dark:shadow-none',
       accent,
     )}>
@@ -174,7 +174,7 @@ const STATUS_COLORS: Record<string, string> = {
   validated: 'bg-indigo-400',
   extracted: 'bg-indigo-300',
   failed:    'bg-red-400',
-  uploading: 'bg-neutral-400',
+  uploading: 'bg-neutral-400 dark:bg-neutral-600',
 };
 
 const TCODE_COLORS = ['bg-indigo-500', 'bg-cyan-500', 'bg-violet-500', 'bg-teal-500', 'bg-amber-500'];
@@ -297,7 +297,7 @@ export default function ReportsPage() {
                 : (metrics?.by_status ?? []).map(s => (
                     <BarRow key={s.status} label={s.status.replace('_', ' ')} count={s.count}
                       percentage={s.percentage}
-                      color={STATUS_COLORS[s.status] ?? 'bg-neutral-400'}
+                      color={STATUS_COLORS[s.status] ?? 'bg-neutral-400 dark:bg-neutral-600'}
                       loading={false} />
                   ))
               }

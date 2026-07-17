@@ -45,7 +45,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     return (
       <div className="w-full">
         {label && (
-          <label htmlFor={selectId} className="mb-1.5 block text-sm font-medium text-neutral-700">
+          <label htmlFor={selectId} className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
             {label}
           </label>
         )}
@@ -55,13 +55,13 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             ref={ref}
             id={selectId}
             className={cn(
-              'w-full appearance-none rounded-lg border bg-white px-3.5 py-2.5 pr-9',
-              'text-sm text-neutral-900 shadow-inner-soft transition-colors',
+              'w-full appearance-none rounded-lg border bg-white px-3.5 py-2.5 pr-9 dark:bg-neutral-800',
+              'text-sm text-neutral-900 shadow-inner-soft transition-colors dark:text-neutral-100',
               'focus:outline-none focus:ring-2 cursor-pointer',
               error
                 ? 'border-danger-400 focus:border-danger-400 focus:ring-danger-200'
-                : 'border-neutral-200 focus:border-primary-400 focus:ring-primary-200',
-              'disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-500',
+                : 'border-neutral-200 focus:border-primary-400 focus:ring-primary-200 dark:border-neutral-700 dark:focus:border-primary-500',
+              'disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-500 dark:disabled:bg-neutral-900 dark:disabled:text-neutral-600',
               className,
             )}
             aria-invalid={!!error}
@@ -72,13 +72,13 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           </select>
 
           <ChevronDown
-            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400"
+            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400 dark:text-neutral-500"
             aria-hidden
           />
         </div>
 
         {error && <p className="mt-1.5 text-xs text-danger-600">{error}</p>}
-        {!error && hint && <p className="mt-1.5 text-xs text-neutral-500">{hint}</p>}
+        {!error && hint && <p className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-500">{hint}</p>}
       </div>
     );
   },

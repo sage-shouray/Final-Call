@@ -274,60 +274,77 @@ class DocumentRepository(BaseRepository[DocumentRow]):
     # Dashboard metrics
     # ------------------------------------------------------------------
 
-    async def get_dashboard_metrics(self) -> dict[str, Any]:
-        """Return counts by status, by tcode, by type, total value, and trend."""
+    async def get_dashboard_metrics(self, tenant_id: str | None = None) -> dict[str, Any]:
+        """Return counts by status, by tcode, by type, total value, and trend.
+        If tenant_id is provided, only rows for that tenant are counted.
+        """
+        def _with_tenant(stmt):
+            if tenant_id:
+                stmt = stmt.where(DocumentRow.tenant_id == tenant_id)
+            return stmt
+
         # by_status
         status_result = await self._session.execute(
-            select(DocumentRow.status, func.count().label("count"))
-            .group_by(DocumentRow.status)
-            .order_by(DocumentRow.status)
+            _with_tenant(
+                select(DocumentRow.status, func.count().label("count"))
+                .group_by(DocumentRow.status)
+                .order_by(DocumentRow.status)
+            )
         )
         by_status = {r.status: r.count for r in status_result}
 
         # by_tcode
         tcode_result = await self._session.execute(
-            select(DocumentRow.tcode, func.count().label("count"))
-            .group_by(DocumentRow.tcode)
-            .order_by(DocumentRow.tcode)
+            _with_tenant(
+                select(DocumentRow.tcode, func.count().label("count"))
+                .group_by(DocumentRow.tcode)
+                .order_by(DocumentRow.tcode)
+            )
         )
         by_tcode = {r.tcode: r.count for r in tcode_result}
 
         # by_type
         type_result = await self._session.execute(
-            select(DocumentRow.type, func.count().label("count"))
-            .group_by(DocumentRow.type)
-            .order_by(DocumentRow.type)
+            _with_tenant(
+                select(DocumentRow.type, func.count().label("count"))
+                .group_by(DocumentRow.type)
+                .order_by(DocumentRow.type)
+            )
         )
         by_type = {r.type: r.count for r in type_result}
 
         # total value + total documents
         value_result = await self._session.execute(
-            select(
-                func.count().label("total_documents"),
-                func.coalesce(
-                    func.sum(
-                        cast(
-                            func.coalesce(
-                                DocumentRow.extracted["gross_amount"].as_string(), "0"
-                            ),
-                            Numeric,
-                        )
-                    ),
-                    0,
-                ).label("total_value"),
+            _with_tenant(
+                select(
+                    func.count().label("total_documents"),
+                    func.coalesce(
+                        func.sum(
+                            cast(
+                                func.coalesce(
+                                    DocumentRow.extracted["gross_amount"].as_string(), "0"
+                                ),
+                                Numeric,
+                            )
+                        ),
+                        0,
+                    ).label("total_value"),
+                )
             )
         )
         value_row = value_result.mappings().first() or {}
 
         # recent trend (last 30 days, grouped by date)
         trend_result = await self._session.execute(
-            select(
-                func.to_char(DocumentRow.uploaded_at, "YYYY-MM-DD").label("_id"),
-                func.count().label("count"),
+            _with_tenant(
+                select(
+                    func.to_char(DocumentRow.uploaded_at, "YYYY-MM-DD").label("_id"),
+                    func.count().label("count"),
+                )
+                .group_by(text("1"))
+                .order_by(desc(text("1")))
+                .limit(30)
             )
-            .group_by(text("1"))
-            .order_by(desc(text("1")))
-            .limit(30)
         )
         recent_trend = [{"_id": r._id, "count": r.count} for r in trend_result]
 

@@ -59,18 +59,18 @@ export function DocTypePicker({ value, onChange }: DocTypePickerProps) {
           return (
             <div
               key={opt.type}
-              className="relative flex cursor-not-allowed flex-col items-center gap-2.5 rounded-xl border border-neutral-200 bg-white p-4 text-center opacity-40"
+              className="relative flex cursor-not-allowed flex-col items-center gap-2.5 rounded-xl border border-neutral-200 bg-white p-4 text-center opacity-40 dark:border-neutral-700 dark:bg-neutral-800"
               title={`${opt.label} — coming soon`}
             >
-              <span className="absolute right-2 top-2 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-neutral-400">
+              <span className="absolute right-2 top-2 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-neutral-400 dark:bg-neutral-700 dark:text-neutral-500">
                 Soon
               </span>
-              <div className="flex h-[38px] w-[38px] items-center justify-center rounded-lg bg-neutral-100">
-                <Icon className="h-5 w-5 text-neutral-400" />
+              <div className="flex h-[38px] w-[38px] items-center justify-center rounded-lg bg-neutral-100 dark:bg-neutral-700">
+                <Icon className="h-5 w-5 text-neutral-400 dark:text-neutral-500" />
               </div>
               <div>
-                <p className="text-xs font-semibold text-neutral-600">{opt.label}</p>
-                <p className="mt-0.5 font-mono text-[10px] text-neutral-400">{opt.tcodeLabel ?? opt.tcode}</p>
+                <p className="text-xs font-semibold text-neutral-600 dark:text-neutral-400">{opt.label}</p>
+                <p className="mt-0.5 font-mono text-[10px] text-neutral-400 dark:text-neutral-500">{opt.tcodeLabel ?? opt.tcode}</p>
               </div>
             </div>
           );
@@ -97,13 +97,13 @@ export function DocTypePicker({ value, onChange }: DocTypePickerProps) {
               'flex h-[38px] w-[38px] items-center justify-center rounded-lg transition-colors duration-150',
               selected ? 'bg-indigo-100 dark:bg-indigo-900' : 'bg-neutral-100 dark:bg-neutral-700',
             )}>
-              <Icon className={cn('h-5 w-5 transition-colors duration-150', selected ? 'text-indigo-600' : 'text-neutral-400')} />
+              <Icon className={cn('h-5 w-5 transition-colors duration-150', selected ? 'text-indigo-600 dark:text-indigo-400' : 'text-neutral-400 dark:text-neutral-500')} />
             </div>
             <div>
               <p className={cn('text-xs font-semibold', selected ? 'text-indigo-700 dark:text-indigo-300' : 'text-neutral-700 dark:text-neutral-300')}>
                 {opt.label}
               </p>
-              <p className="mt-0.5 font-mono text-[10px] text-neutral-400">{opt.tcodeLabel ?? opt.tcode}</p>
+              <p className="mt-0.5 font-mono text-[10px] text-neutral-400 dark:text-neutral-500">{opt.tcodeLabel ?? opt.tcode}</p>
             </div>
           </button>
         );

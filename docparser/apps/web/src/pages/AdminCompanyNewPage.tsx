@@ -48,7 +48,7 @@ export default function AdminCompanyNewPage() {
       <div className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900 space-y-5">
         {fields.map(f => (
           <div key={f.key}>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1.5">
+            <label className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400 mb-1.5">
               {f.label} {f.required && <span className="text-red-500">*</span>}
             </label>
             <input
@@ -66,7 +66,7 @@ export default function AdminCompanyNewPage() {
         ))}
 
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1.5">Address</label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400 mb-1.5">Address</label>
           <textarea
             value={form.address}
             onChange={set('address')}
@@ -76,7 +76,7 @@ export default function AdminCompanyNewPage() {
         </div>
 
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1.5">Status</label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400 mb-1.5">Status</label>
           <select value={form.status} onChange={set('status')}
             className="w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-white">
             {['trial', 'active', 'suspended'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
@@ -95,7 +95,7 @@ export default function AdminCompanyNewPage() {
             {create.isPending ? 'Creating…' : 'Create Company'}
           </button>
           <button onClick={() => navigate('/admin')}
-            className="rounded-lg px-5 py-2.5 text-sm text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800">
+            className="rounded-lg px-5 py-2.5 text-sm text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800">
             Cancel
           </button>
         </div>

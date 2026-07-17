@@ -72,24 +72,24 @@ export function FileDropzone({
               'flex h-14 w-14 items-center justify-center rounded-full transition-colors duration-200',
               isDragActive ? 'bg-indigo-100 dark:bg-indigo-900' : 'bg-neutral-100 dark:bg-neutral-700',
             )}>
-              <UploadCloud className={cn('h-7 w-7 transition-colors duration-200', isDragActive ? 'text-indigo-500' : 'text-neutral-400')} />
+              <UploadCloud className={cn('h-7 w-7 transition-colors duration-200', isDragActive ? 'text-indigo-500 dark:text-indigo-400' : 'text-neutral-400 dark:text-neutral-500')} />
             </div>
             <div className="text-center">
               <p className={cn('text-sm font-medium', isDragActive ? 'text-indigo-700 dark:text-indigo-300' : 'text-neutral-600 dark:text-neutral-400')}>
                 {isDragActive ? 'Release to upload' : 'Drop your file here'}
               </p>
-              {!isDragActive && <p className="mt-0.5 text-xs text-neutral-400">or click to browse</p>}
+              {!isDragActive && <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">or click to browse</p>}
             </div>
-            <p className="text-xs text-neutral-400">PDF · PNG · JPEG · TIFF · WebP — max 20 MB</p>
+            <p className="text-xs text-neutral-400 dark:text-neutral-500">PDF · PNG · JPEG · TIFF · WebP — max 20 MB</p>
           </>
         ) : (
           <div className="flex w-full items-center gap-4 px-6">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-indigo-100">
-              <FileText className="h-6 w-6 text-indigo-600" />
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-indigo-100 dark:bg-indigo-900">
+              <FileText className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="truncate text-sm font-semibold text-neutral-800 dark:text-neutral-200">{file.name}</p>
-              <p className="mt-0.5 text-xs text-neutral-400">
+              <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">
                 {fileSizeLabel(file.size)} · {file.type || 'unknown type'}
               </p>
             </div>
@@ -97,7 +97,7 @@ export function FileDropzone({
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onClear(); }}
-                className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 transition-colors"
+                className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 transition-colors dark:text-neutral-500 dark:hover:bg-neutral-700 dark:hover:text-neutral-300"
                 aria-label="Remove file"
               >
                 <X className="h-4 w-4" />
@@ -116,13 +116,13 @@ export function FileDropzone({
               style={{ width: `${progress}%` }}
             />
           </div>
-          <p className="text-right text-xs text-neutral-400">{progress}%</p>
+          <p className="text-right text-xs text-neutral-400 dark:text-neutral-500">{progress}%</p>
         </div>
       )}
 
       {/* Error */}
       {displayError && !uploading && (
-        <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+        <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950 dark:text-red-400">
           <AlertCircle className="h-4 w-4 shrink-0" />
           {displayError}
         </div>

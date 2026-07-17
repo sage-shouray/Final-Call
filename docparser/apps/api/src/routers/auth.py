@@ -1,9 +1,10 @@
 """Authentication endpoints."""
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
 from fastapi import APIRouter, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import func, select, text
 
 from src.exceptions import AuthError, NotFoundError
 from src.middleware.auth import CurrentUser
@@ -22,8 +23,77 @@ log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
+_BF_MAX_ATTEMPTS = 5      # max failed attempts before lockout
+_BF_LOCKOUT_SECS = 900    # 15-minute ban
+
+
+async def _check_brute_force(ip: str) -> None:
+    """Raise 429 if this IP has too many recent failed login attempts."""
+    try:
+        from src.utils.redis_client import get_redis
+        redis = get_redis()
+        count = await redis.get(f"bf:login:{ip}")
+        if count and int(count) >= _BF_MAX_ATTEMPTS:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many failed login attempts. Try again in 15 minutes.",
+                headers={"Retry-After": str(_BF_LOCKOUT_SECS)},
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # Redis unavailable — allow through
+
+
+async def _record_failed_login(ip: str) -> None:
+    try:
+        from src.utils.redis_client import get_redis
+        redis = get_redis()
+        key = f"bf:login:{ip}"
+        count = await redis.incr(key)
+        if count == 1:
+            await redis.expire(key, _BF_LOCKOUT_SECS)
+    except Exception:
+        pass
+
+
+async def _clear_brute_force(ip: str) -> None:
+    try:
+        from src.utils.redis_client import get_redis
+        await get_redis().delete(f"bf:login:{ip}")
+    except Exception:
+        pass
+
+
+async def _write_audit(
+    *,
+    action: str,
+    performed_by: str,
+    ip_address: str,
+    document_id: str | None = None,
+    details: dict | None = None,
+) -> None:
+    try:
+        from src.database import AsyncSessionLocal
+        from src.models.audit_log import AuditLogRow
+        async with AsyncSessionLocal() as _session:
+            _session.add(AuditLogRow(
+                document_id=document_id,
+                action=action,
+                performed_by=performed_by,
+                ip_address=ip_address,
+                details=details or {},
+            ))
+            await _session.commit()
+    except Exception as _exc:
+        log.warning("audit log write failed", error=str(_exc))
+
+
 @router.post("/login", response_model=LoginResponse, summary="Obtain access and refresh tokens")
 async def login(body: LoginRequest, request: Request) -> LoginResponse:
+    ip = request.client.host if request.client else "unknown"
+    await _check_brute_force(ip)
+
     from src.database import AsyncSessionLocal
     async with AsyncSessionLocal() as session:
         user_repo = UserRepository(session)
@@ -35,10 +105,13 @@ async def login(body: LoginRequest, request: Request) -> LoginResponse:
     password_ok = auth_service.verify_password(body.password, candidate_hash)
 
     if not user_doc or not password_ok:
+        await _record_failed_login(ip)
         raise AuthError("Invalid email or password", error_code="INVALID_CREDENTIALS", status_code=401)
 
     if not user_doc.get("is_active", True):
         raise AuthError("This account has been deactivated", error_code="ACCOUNT_INACTIVE", status_code=401)
+
+    await _clear_brute_force(ip)
 
     user_id = str(user_doc["id"])
     tokens = await auth_service.create_tokens(
@@ -51,6 +124,13 @@ async def login(body: LoginRequest, request: Request) -> LoginResponse:
         await session.commit()
 
     log.info("user logged in", email=user_doc["email"], role=user_doc["role"])
+    import asyncio as _asyncio
+    _asyncio.create_task(_write_audit(
+        action="user.login",
+        performed_by=user_id,
+        ip_address=ip,
+        details={"email": user_doc["email"], "role": user_doc["role"]},
+    ))
 
     return LoginResponse(
         **tokens,
@@ -196,6 +276,13 @@ async def add_team_member(body: dict[str, Any], current_user: CurrentUser) -> di
         await session.commit()
         await session.refresh(user)
         log.info("team member added", by=current_user.sub, email=email, tenant=tenant_id)
+        import asyncio as _asyncio
+        _asyncio.create_task(_write_audit(
+            action="user.created",
+            performed_by=current_user.sub,
+            ip_address="",
+            details={"email": email, "role": role, "tenant_id": tenant_id},
+        ))
         return user.to_dict()
 
 
@@ -228,3 +315,75 @@ async def update_team_member(user_id: str, body: dict[str, Any], current_user: C
         await session.commit()
         await session.refresh(user)
         return user.to_dict()
+
+
+# ---------------------------------------------------------------------------
+# Manager — billing within own company
+# Shows documents processed and cost owed for the current billing period.
+# ---------------------------------------------------------------------------
+
+_MONTH_NAMES = [
+    "", "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+]
+
+
+@router.get("/billing", summary="Manager: billing summary for own company")
+async def get_own_billing(current_user: CurrentUser) -> dict[str, Any]:
+    _require_manager(current_user)
+    tenant_id = _require_own_tenant(current_user)
+    now = datetime.now(UTC)
+
+    from src.database import AsyncSessionLocal
+    from src.models.tenant import BillingRecordRow, PricingConfigRow
+
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(text("""
+            SELECT d.tcode, COUNT(*) as doc_count, COALESCE(SUM(d.page_count), 0) as page_count
+            FROM documents d
+            WHERE d.tenant_id = :tid
+              AND EXTRACT(MONTH FROM d.uploaded_at) = :month
+              AND EXTRACT(YEAR  FROM d.uploaded_at) = :year
+              AND d.status IN ('posted','gr_posted','validated','simulated')
+            GROUP BY d.tcode
+        """), {"tid": tenant_id, "month": now.month, "year": now.year})).fetchall()
+
+        pricing: dict[str, PricingConfigRow] = {r.tcode: r for r in (await session.execute(
+            select(PricingConfigRow).where(PricingConfigRow.tenant_id == tenant_id)
+        )).scalars().all()}
+
+        line_items = []
+        total = 0.0
+        total_docs = 0
+        total_pages = 0
+        for row in rows:
+            tcode, doc_count, page_count = row[0], row[1], row[2]
+            p      = pricing.get(tcode)
+            price  = float(p.price_per_document) if p else 0.0
+            amount = doc_count * price
+            total       += amount
+            total_docs  += doc_count
+            total_pages += int(page_count)
+            line_items.append({
+                "tcode":      tcode,
+                "label":      p.label if p else tcode,
+                "doc_count":  doc_count,
+                "price_each": price,
+                "amount":     amount,
+            })
+
+        history = (await session.execute(
+            select(BillingRecordRow).where(BillingRecordRow.tenant_id == tenant_id)
+            .order_by(BillingRecordRow.period_year.desc(), BillingRecordRow.period_month.desc())
+        )).scalars().all()
+
+        return {
+            "period_month":     now.month,
+            "period_year":      now.year,
+            "period_label":     f"{_MONTH_NAMES[now.month]} {now.year}",
+            "line_items":       line_items,
+            "total_documents":  total_docs,
+            "total_pages":      total_pages,
+            "total_due":        total,
+            "history":          [r.to_dict() for r in history],
+        }

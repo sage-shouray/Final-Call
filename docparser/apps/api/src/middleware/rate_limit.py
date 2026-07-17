@@ -27,10 +27,11 @@ from src.config import settings
 log = structlog.get_logger(__name__)
 
 # Paths that are never rate-limited (health probes, auth handshake)
+# NOTE: /api/auth/login is NOT whitelisted — brute-force protection is
+# handled in the login endpoint itself (per-IP lockout via Redis).
 _WHITELIST = frozenset({
     "/api/health",
     "/api/health/ready",
-    "/api/auth/login",
     "/api/auth/refresh",
 })
 

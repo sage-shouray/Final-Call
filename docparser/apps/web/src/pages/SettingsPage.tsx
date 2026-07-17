@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Moon, Sun, Monitor, Globe, LayoutDashboard, CheckCircle2 } from 'lucide-react';
+import { Moon, Sun, Globe, LayoutDashboard, CheckCircle2 } from 'lucide-react';
 import { Topbar }   from '@/components/layout/Topbar';
 import { Button }   from '@/components/ui/Button';
 import { cn }       from '@/lib/cn';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Theme       = 'light' | 'dark' | 'system';
+type Theme       = 'light' | 'dark';
 type DateFmt     = 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD';
 type DefaultView = 'dashboard' | 'documents' | 'upload';
 
@@ -26,14 +26,19 @@ const STORAGE_KEY = 'uvira-app-prefs';
 function loadPrefs(): AppPrefs {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...defaults(), ...JSON.parse(raw) };
+    if (raw) {
+      const parsed = { ...defaults(), ...JSON.parse(raw) };
+      // Migrate any stale 'system' value from the old three-way picker.
+      if (parsed.theme !== 'light' && parsed.theme !== 'dark') parsed.theme = 'light';
+      return parsed;
+    }
   } catch { /* ignore */ }
   return defaults();
 }
 
 function defaults(): AppPrefs {
   return {
-    theme:          'system',
+    theme:          'light',
     dateFormat:     'DD/MM/YYYY',
     defaultView:    'dashboard',
     notifySuccess:  true,
@@ -67,7 +72,7 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
       onClick={() => onChange(!on)}
       className={cn(
         'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none',
-        on ? 'bg-indigo-500' : 'bg-neutral-200',
+        on ? 'bg-indigo-500' : 'bg-neutral-200 dark:bg-neutral-700',
       )}
     >
       <span className={cn(
@@ -95,9 +100,8 @@ function SettingRow({ label, description, children }: {
 // ─── Theme picker ─────────────────────────────────────────────────────────────
 
 const THEMES: { id: Theme; label: string; icon: React.ElementType }[] = [
-  { id: 'light',  label: 'Light',  icon: Sun     },
-  { id: 'dark',   label: 'Dark',   icon: Moon    },
-  { id: 'system', label: 'System', icon: Monitor },
+  { id: 'light', label: 'Light', icon: Sun  },
+  { id: 'dark',  label: 'Dark',  icon: Moon },
 ];
 
 function ThemePicker({ value, onChange }: { value: Theme; onChange: (v: Theme) => void }) {
@@ -137,16 +141,15 @@ export default function SettingsPage() {
     setPrefs(p => ({ ...p, [key]: val }));
   }
 
-  function applyTheme(theme: string) {
-    const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-    } else if (theme === 'light') {
-      root.classList.remove('dark');
-    } else {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      root.classList.toggle('dark', prefersDark);
-    }
+  function applyTheme(theme: Theme) {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+  }
+
+  function setTheme(theme: Theme) {
+    set('theme', theme);
+    // Apply immediately so the picker feels responsive, independent of Save.
+    applyTheme(theme);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...prefs, theme }));
   }
 
   function save() {
@@ -160,6 +163,7 @@ export default function SettingsPage() {
     const d = defaults();
     setPrefs(d);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+    applyTheme(d.theme);
   }
 
   return (
@@ -174,7 +178,7 @@ export default function SettingsPage() {
             title="Appearance"
             description="Choose how Uvira.ai looks on your device."
           >
-            <ThemePicker value={prefs.theme} onChange={v => set('theme', v)} />
+            <ThemePicker value={prefs.theme} onChange={setTheme} />
 
             <SettingRow
               label="Compact Sidebar"

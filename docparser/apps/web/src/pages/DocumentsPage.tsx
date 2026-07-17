@@ -56,7 +56,7 @@ function RowAction({ doc }: { doc: DocumentListItem }) {
   if (doc.status === DocumentStatus.EXTRACTED && !isMigo && !isNonPO) {
     return (
       <button onClick={(e) => { stop(e); validateMut.mutate(); }} disabled={validateMut.isPending}
-        className="inline-flex items-center gap-1 rounded-md bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100 disabled:opacity-50 border border-primary-200 transition-colors whitespace-nowrap">
+        className="inline-flex items-center gap-1 rounded-md bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100 disabled:opacity-50 border border-primary-200 transition-colors whitespace-nowrap dark:bg-primary-950 dark:text-primary-400 dark:hover:bg-primary-900 dark:border-primary-800">
         {validateMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
         {doc.invoice_subtype === 'freight_po' ? 'Validate Freight' : doc.invoice_subtype === 'service_po' ? 'Validate Service' : 'Validate with SAP'}
       </button>
@@ -65,7 +65,7 @@ function RowAction({ doc }: { doc: DocumentListItem }) {
   if (doc.status === DocumentStatus.EXTRACTED && isMigo) {
     return (
       <button onClick={(e) => { stop(e); grnMut.mutate(); }} disabled={grnMut.isPending}
-        className="inline-flex items-center gap-1 rounded-md bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 hover:bg-teal-100 disabled:opacity-50 border border-teal-200 transition-colors whitespace-nowrap">
+        className="inline-flex items-center gap-1 rounded-md bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 hover:bg-teal-100 disabled:opacity-50 border border-teal-200 transition-colors whitespace-nowrap dark:bg-teal-950 dark:text-teal-400 dark:hover:bg-teal-900 dark:border-teal-800">
         {grnMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowRight className="h-3 w-3" />}
         Post to MIGO
       </button>
@@ -74,7 +74,7 @@ function RowAction({ doc }: { doc: DocumentListItem }) {
   if (doc.status === DocumentStatus.VALIDATED && !isMigo) {
     return (
       <button onClick={(e) => { stop(e); miroMut.mutate(); }} disabled={miroMut.isPending}
-        className="inline-flex items-center gap-1 rounded-md bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50 border border-green-200 transition-colors whitespace-nowrap">
+        className="inline-flex items-center gap-1 rounded-md bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50 border border-green-200 transition-colors whitespace-nowrap dark:bg-green-950 dark:text-green-400 dark:hover:bg-green-900 dark:border-green-800">
         {miroMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowRight className="h-3 w-3" />}
         Post to MIRO
       </button>
@@ -83,7 +83,7 @@ function RowAction({ doc }: { doc: DocumentListItem }) {
   if (doc.status === DocumentStatus.GR_POSTED) {
     return (
       <button onClick={(e) => { stop(e); miroMut.mutate(); }} disabled={miroMut.isPending}
-        className="inline-flex items-center gap-1 rounded-md bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50 border border-green-200 transition-colors whitespace-nowrap">
+        className="inline-flex items-center gap-1 rounded-md bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50 border border-green-200 transition-colors whitespace-nowrap dark:bg-green-950 dark:text-green-400 dark:hover:bg-green-900 dark:border-green-800">
         {miroMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowRight className="h-3 w-3" />}
         Post to MIRO
       </button>
@@ -92,18 +92,18 @@ function RowAction({ doc }: { doc: DocumentListItem }) {
   if (doc.status === DocumentStatus.FAILED) {
     return (
       <button onClick={(e) => { stop(e); retryMut.mutate(); }} disabled={retryMut.isPending}
-        className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 border border-amber-200 transition-colors whitespace-nowrap">
+        className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50 border border-amber-200 transition-colors whitespace-nowrap dark:bg-amber-950 dark:text-amber-400 dark:hover:bg-amber-900 dark:border-amber-800">
         {retryMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <AlertCircle className="h-3 w-3" />}
         Retry OCR
       </button>
     );
   }
   if (doc.status === DocumentStatus.POSTED) {
-    return <span className="text-xs text-green-600 font-medium">✓ Complete</span>;
+    return <span className="text-xs text-green-600 font-medium dark:text-green-400">✓ Complete</span>;
   }
   return (
     <button onClick={(e) => { stop(e); navigate(`/documents/${doc.document_id}`); }}
-      className="inline-flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-600 transition-colors">
+      className="inline-flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors">
       <ArrowRight className="h-3 w-3" /> View
     </button>
   );
@@ -139,12 +139,12 @@ function sortDocs(
 // ─── Confidence cell ──────────────────────────────────────────────────────────
 
 function ConfidenceCell({ score }: { score: number | undefined }) {
-  if (score == null) return <span className="text-neutral-300">—</span>;
+  if (score == null) return <span className="text-neutral-300 dark:text-neutral-600">—</span>;
   const pct = Math.round(score * 100);
   const cls =
-    pct >= 75 ? 'text-green-700 bg-green-50'
-    : pct >= 50 ? 'text-amber-700 bg-amber-50'
-    : 'text-red-700 bg-red-50';
+    pct >= 75 ? 'text-green-700 bg-green-50 dark:text-green-400 dark:bg-green-950'
+    : pct >= 50 ? 'text-amber-700 bg-amber-50 dark:text-amber-400 dark:bg-amber-950'
+    : 'text-red-700 bg-red-50 dark:text-red-400 dark:bg-red-950';
   return (
     <span className={cn('inline-block rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums', cls)}>
       {pct}%
@@ -168,7 +168,7 @@ function SortHeader({
     <button
       type="button"
       onClick={() => onSort(field)}
-      className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-neutral-400 hover:text-neutral-600 transition-colors"
+      className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-neutral-400 hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300 transition-colors"
     >
       {label}
       {active
@@ -248,7 +248,7 @@ function FilterPanel({ open, draft, onChange, onApply, onReset, onClose }: Filte
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 transition-colors"
+            className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-700 dark:hover:text-neutral-300 transition-colors"
           >
             <X className="h-4 w-4" />
           </button>
@@ -345,7 +345,7 @@ function RadioGroup({
             value={opt.value}
             checked={value === opt.value}
             onChange={() => onChange(opt.value)}
-            className="h-4 w-4 border-neutral-300 text-primary-600 focus:ring-primary-200"
+            className="h-4 w-4 border-neutral-300 text-primary-600 focus:ring-primary-200 dark:border-neutral-600 dark:bg-neutral-800"
           />
           <span className="text-sm text-neutral-700 dark:text-neutral-300">{opt.label}</span>
         </label>
@@ -499,7 +499,7 @@ export default function DocumentsPage() {
             <button
               type="button"
               onClick={() => setSearchExpanded((v) => !v)}
-              className="shrink-0 text-neutral-400 hover:text-neutral-600 transition-colors"
+              className="shrink-0 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
               aria-label="Toggle search"
             >
               <Search className="h-4 w-4" />
@@ -518,7 +518,7 @@ export default function DocumentsPage() {
               <button
                 type="button"
                 onClick={() => setSearchInput('')}
-                className="shrink-0 text-neutral-300 hover:text-neutral-500"
+                className="shrink-0 text-neutral-300 hover:text-neutral-500 dark:text-neutral-600 dark:hover:text-neutral-400"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -532,8 +532,8 @@ export default function DocumentsPage() {
             className={cn(
               'relative inline-flex items-center gap-1.5 rounded-lg border px-3 py-[7px] text-sm font-medium transition-colors',
               badge > 0
-                ? 'border-primary-300 bg-primary-50 text-primary-700 hover:bg-primary-100'
-                : 'border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50',
+                ? 'border-primary-300 bg-primary-50 text-primary-700 hover:bg-primary-100 dark:border-primary-800 dark:bg-primary-950 dark:text-primary-400 dark:hover:bg-primary-900'
+                : 'border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700',
             )}
           >
             <SlidersHorizontal className="h-4 w-4" />
@@ -550,7 +550,7 @@ export default function DocumentsPage() {
             <button
               type="button"
               onClick={clearAllFilters}
-              className="inline-flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-600 transition-colors"
+              className="inline-flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
             >
               <X className="h-3 w-3" />
               Clear
@@ -558,7 +558,7 @@ export default function DocumentsPage() {
           )}
 
           {/* Page size */}
-          <div className="ml-auto flex items-center gap-2 text-sm text-neutral-500">
+          <div className="ml-auto flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
             <span className="text-xs">Show</span>
             <div className="flex rounded-lg border border-neutral-200 bg-white overflow-hidden dark:border-neutral-700 dark:bg-neutral-800">
               {PAGE_SIZE_OPTIONS.map((n) => (
@@ -617,7 +617,7 @@ export default function DocumentsPage() {
                       <TableRow>
                         <TableCell colSpan={10}>
                           <div className="flex flex-col items-center gap-3 py-16 text-center">
-                            <p className="text-sm font-medium text-neutral-500">No documents match your filters</p>
+                            <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">No documents match your filters</p>
                             {(badge > 0 || searchInput) && (
                               <button
                                 type="button"
@@ -637,7 +637,7 @@ export default function DocumentsPage() {
                         className="cursor-pointer"
                         onClick={() => navigate(`/documents/${doc.document_id}`)}
                       >
-                        <TableCell className="font-mono text-xs text-neutral-500">
+                        <TableCell className="font-mono text-xs text-neutral-500 dark:text-neutral-400">
                           {doc.document_id.slice(0, 8)}…
                         </TableCell>
                         <TableCell className="font-medium">{doc.vendor_name || '—'}</TableCell>
@@ -645,8 +645,8 @@ export default function DocumentsPage() {
                         <TableCell className="tabular-nums">{doc.amount != null ? toINR(Number(doc.amount)) : '—'}</TableCell>
                         <TableCell><ConfidenceCell score={doc.confidence_score} /></TableCell>
                         <TableCell><StatusPill status={doc.status} /></TableCell>
-                        <TableCell className="text-neutral-500 text-xs">{doc.uploaded_by ?? '—'}</TableCell>
-                        <TableCell className="text-neutral-500">{formatDate(doc.uploaded_at)}</TableCell>
+                        <TableCell className="text-neutral-500 text-xs dark:text-neutral-400">{doc.uploaded_by ?? '—'}</TableCell>
+                        <TableCell className="text-neutral-500 dark:text-neutral-400">{formatDate(doc.uploaded_at)}</TableCell>
                         <TableCell className="font-mono text-xs">{doc.miro_number || '—'}</TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <RowAction doc={doc} />
@@ -660,7 +660,7 @@ export default function DocumentsPage() {
 
         {/* Pagination */}
         {pages > 1 && (
-          <div className="flex items-center justify-between text-sm text-neutral-500">
+          <div className="flex items-center justify-between text-sm text-neutral-500 dark:text-neutral-400">
             <span className="text-xs">
               Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}
             </span>

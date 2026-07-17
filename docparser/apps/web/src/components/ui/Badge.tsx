@@ -11,11 +11,11 @@ interface BadgeProps {
 }
 
 const variantCls: Record<BadgeVariant, string> = {
-  success: 'bg-success-100  text-success-700',
-  warning: 'bg-warning-100  text-warning-700',
-  error:   'bg-danger-100   text-danger-700',
-  info:    'bg-primary-100  text-primary-700',
-  neutral: 'bg-neutral-100  text-neutral-600',
+  success: 'bg-success-100  text-success-700  dark:bg-success-900 dark:text-success-300',
+  warning: 'bg-warning-100  text-warning-700  dark:bg-warning-900 dark:text-warning-300',
+  error:   'bg-danger-100   text-danger-700   dark:bg-danger-900 dark:text-danger-300',
+  info:    'bg-primary-100  text-primary-700  dark:bg-primary-950 dark:text-primary-300',
+  neutral: 'bg-neutral-100  text-neutral-600  dark:bg-neutral-800 dark:text-neutral-400',
 };
 
 const dotCls: Record<BadgeVariant, string> = {

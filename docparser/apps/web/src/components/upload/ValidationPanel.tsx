@@ -64,7 +64,7 @@ export function ValidationLoading() {
 
       <div className="text-center">
         <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Validating against SAP</p>
-        <p className="mt-1 text-xs text-neutral-400">Fetching PO data and comparing line items…</p>
+        <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">Fetching PO data and comparing line items…</p>
       </div>
     </div>
   );
@@ -118,10 +118,10 @@ function HeaderTab({ mismatches }: { mismatches: MismatchEntry[] }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-neutral-100 bg-neutral-50 text-xs dark:border-neutral-700 dark:bg-neutral-800/80">
-            <th className="px-4 py-2.5 text-left font-semibold uppercase tracking-wider text-neutral-400">Field</th>
-            <th className="px-4 py-2.5 text-left font-semibold uppercase tracking-wider text-neutral-400">From Invoice</th>
-            <th className="px-4 py-2.5 text-left font-semibold uppercase tracking-wider text-neutral-400">From SAP</th>
-            <th className="px-4 py-2.5 text-center font-semibold uppercase tracking-wider text-neutral-400">Match</th>
+            <th className="px-4 py-2.5 text-left font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Field</th>
+            <th className="px-4 py-2.5 text-left font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">From Invoice</th>
+            <th className="px-4 py-2.5 text-left font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">From SAP</th>
+            <th className="px-4 py-2.5 text-center font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Match</th>
           </tr>
         </thead>
         <tbody>
@@ -138,15 +138,15 @@ function HeaderTab({ mismatches }: { mismatches: MismatchEntry[] }) {
               <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">{r.sap}</td>
               <td className="px-4 py-3 text-center">
                 {r.match
-                  ? <CheckCircle2 className="mx-auto h-4 w-4 text-green-500" />
-                  : <XCircle      className="mx-auto h-4 w-4 text-red-500" />
+                  ? <CheckCircle2 className="mx-auto h-4 w-4 text-green-500 dark:text-green-400" />
+                  : <XCircle      className="mx-auto h-4 w-4 text-red-500 dark:text-red-400" />
                 }
               </td>
             </tr>
           ))}
           {mismatches.length === 0 && (
             <tr>
-              <td colSpan={4} className="px-4 py-6 text-center text-sm text-neutral-400">
+              <td colSpan={4} className="px-4 py-6 text-center text-sm text-neutral-400 dark:text-neutral-500">
                 No header mismatches — all fields match SAP data.
               </td>
             </tr>
@@ -165,32 +165,32 @@ function LinesTab({ mismatches }: { mismatches: MismatchEntry[] }) {
 
   if (lineRejected.length === 0 && lineWarning.length === 0) {
     return (
-      <div className="py-8 text-center text-sm text-neutral-400">
+      <div className="py-8 text-center text-sm text-neutral-400 dark:text-neutral-500">
         All line items match SAP purchase order data.
       </div>
     );
   }
 
   return (
-    <div className="divide-y divide-neutral-100">
+    <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
       {[...lineRejected, ...lineWarning].map((m, i) => (
         <div
           key={i}
           className={cn(
             'flex items-start gap-3 px-4 py-3',
-            m.severity === 'error' ? 'bg-red-50/50' : 'bg-amber-50/50',
+            m.severity === 'error' ? 'bg-red-50/50 dark:bg-red-950/30' : 'bg-amber-50/50 dark:bg-amber-950/20',
           )}
         >
-          <AlertTriangle className={cn('mt-0.5 h-4 w-4 shrink-0', m.severity === 'error' ? 'text-red-500' : 'text-amber-500')} />
+          <AlertTriangle className={cn('mt-0.5 h-4 w-4 shrink-0', m.severity === 'error' ? 'text-red-500 dark:text-red-400' : 'text-amber-500 dark:text-amber-400')} />
           <div className="flex-1 text-sm">
-            <span className="font-medium text-neutral-800">{m.field}</span>
+            <span className="font-medium text-neutral-800 dark:text-neutral-200">{m.field}</span>
             <Tooltip content={`Invoice: ${m.extracted_value} vs SAP: ${m.sap_value}`} side="right">
-              <span className="ml-2 cursor-help text-xs text-neutral-400 underline decoration-dotted">
+              <span className="ml-2 cursor-help text-xs text-neutral-400 underline decoration-dotted dark:text-neutral-500">
                 See difference
               </span>
             </Tooltip>
           </div>
-          <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase', m.severity === 'error' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600')}>
+          <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase', m.severity === 'error' ? 'bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400')}>
             {m.severity}
           </span>
         </div>
@@ -202,14 +202,14 @@ function LinesTab({ mismatches }: { mismatches: MismatchEntry[] }) {
 // ─── GR status tab ────────────────────────────────────────────────────────────
 
 const GR_STATUS_CLS: Record<string, string> = {
-  complete: 'bg-green-100 text-green-700',
-  partial:  'bg-amber-100 text-amber-700',
-  missing:  'bg-red-100   text-red-700',
+  complete: 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400',
+  partial:  'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400',
+  missing:  'bg-red-100   text-red-700 dark:bg-red-950 dark:text-red-400',
 };
 
 function GRTab({ grStatus }: { grStatus: GRStatusEntry[] }) {
   if (!grStatus.length) {
-    return <div className="py-8 text-center text-sm text-neutral-400">No GR data available.</div>;
+    return <div className="py-8 text-center text-sm text-neutral-400 dark:text-neutral-500">No GR data available.</div>;
   }
 
   return (
@@ -217,11 +217,11 @@ function GRTab({ grStatus }: { grStatus: GRStatusEntry[] }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-neutral-100 bg-neutral-50 text-xs dark:border-neutral-700 dark:bg-neutral-800/80">
-            <th className="px-4 py-2.5 text-left font-semibold uppercase tracking-wider text-neutral-400">Line</th>
-            <th className="px-4 py-2.5 text-left font-semibold uppercase tracking-wider text-neutral-400">GR Documents</th>
-            <th className="px-4 py-2.5 text-right font-semibold uppercase tracking-wider text-neutral-400">GR Qty</th>
-            <th className="px-4 py-2.5 text-right font-semibold uppercase tracking-wider text-neutral-400">Invoice Qty</th>
-            <th className="px-4 py-2.5 text-center font-semibold uppercase tracking-wider text-neutral-400">Status</th>
+            <th className="px-4 py-2.5 text-left font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Line</th>
+            <th className="px-4 py-2.5 text-left font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">GR Documents</th>
+            <th className="px-4 py-2.5 text-right font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">GR Qty</th>
+            <th className="px-4 py-2.5 text-right font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Invoice Qty</th>
+            <th className="px-4 py-2.5 text-center font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Status</th>
           </tr>
         </thead>
         <tbody>
@@ -231,15 +231,15 @@ function GRTab({ grStatus }: { grStatus: GRStatusEntry[] }) {
               <td className="px-4 py-3">
                 {g.gr_documents.length
                   ? g.gr_documents.map((d) => (
-                      <span key={d} className="mr-1 block font-mono text-[10px] text-neutral-600">{d}</span>
+                      <span key={d} className="mr-1 block font-mono text-[10px] text-neutral-600 dark:text-neutral-400">{d}</span>
                     ))
-                  : <span className="text-neutral-300">—</span>
+                  : <span className="text-neutral-300 dark:text-neutral-600">—</span>
                 }
               </td>
-              <td className="px-4 py-3 text-right font-mono text-xs tabular-nums">{g.total_gr_qty}</td>
-              <td className="px-4 py-3 text-right font-mono text-xs tabular-nums">{g.invoice_qty}</td>
+              <td className="px-4 py-3 text-right font-mono text-xs tabular-nums text-neutral-700 dark:text-neutral-300">{g.total_gr_qty}</td>
+              <td className="px-4 py-3 text-right font-mono text-xs tabular-nums text-neutral-700 dark:text-neutral-300">{g.invoice_qty}</td>
               <td className="px-4 py-3 text-center">
-                <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize', GR_STATUS_CLS[g.status] ?? 'bg-neutral-100 text-neutral-600')}>
+                <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize', GR_STATUS_CLS[g.status] ?? 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400')}>
                   {g.status}
                 </span>
               </td>
@@ -279,7 +279,7 @@ export function ValidationPanel({ validation, onPost, isPosting }: ValidationPan
             const cls = p >= 75 ? 'text-green-600' : p >= 50 ? 'text-amber-600' : 'text-red-600';
             return (
               <div key={label} className="space-y-1 text-center">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">{label}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">{label}</p>
                 <p className={cn('font-display text-xl font-bold tabular-nums', cls)} style={{ fontFamily: 'var(--ff-display)' }}>
                   {p}%
                 </p>
@@ -293,7 +293,7 @@ export function ValidationPanel({ validation, onPost, isPosting }: ValidationPan
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden dark:border-neutral-700 dark:bg-neutral-900">
         <div className="flex items-center gap-4 border-b border-neutral-100 px-5 py-3.5 dark:border-neutral-700">
           <TabBar active={tab} onChange={setTab} />
-          <span className="ml-auto text-xs text-neutral-400">
+          <span className="ml-auto text-xs text-neutral-400 dark:text-neutral-500">
             {validation.mismatches.length} mismatch{validation.mismatches.length !== 1 ? 'es' : ''} found
           </span>
         </div>
@@ -307,17 +307,17 @@ export function ValidationPanel({ validation, onPost, isPosting }: ValidationPan
       <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white px-5 py-3.5 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
         <div>
           {isLow ? (
-            <div className="flex items-center gap-2 text-sm text-amber-700">
+            <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400">
               <AlertTriangle className="h-4 w-4 shrink-0" />
               Score below threshold — manual review recommended
             </div>
           ) : (
-            <p className="text-sm text-green-700 font-medium">
+            <p className="text-sm text-green-700 font-medium dark:text-green-400">
               Validation passed — ready to post to MIRO
             </p>
           )}
           {validation.recommendation && (
-            <p className="mt-0.5 text-xs text-neutral-400">{validation.recommendation}</p>
+            <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">{validation.recommendation}</p>
           )}
         </div>
 

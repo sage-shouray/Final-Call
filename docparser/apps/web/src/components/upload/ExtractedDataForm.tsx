@@ -209,13 +209,9 @@ interface ExtractedDataFormProps {
 }
 
 export function ExtractedDataForm({
-  data, onDataChange, onValidate, isValidating, validateLabel = 'Validate with SAP',
+  data, onValidate, isValidating, validateLabel = 'Validate with SAP',
 }: ExtractedDataFormProps) {
   const [lineOpen, setLineOpen] = useState(false);
-
-  function set<K extends keyof ExtractedData>(key: K, val: ExtractedData[K]) {
-    onDataChange({ ...data, [key]: val });
-  }
 
   const hasAdjustments = [
     data.discount_amount, data.freight_charges, data.packing_charges,
@@ -400,7 +396,7 @@ export function ExtractedDataForm({
                     { label: 'Vendor ID',    value: data.vendor_id },
                   ].map(({ label, value }) => (
                     <div key={label} className="space-y-0.5">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">{label}</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 dark:text-slate-500">{label}</p>
                       <p className="text-sm font-medium text-neutral-800 dark:text-slate-200">{value || '—'}</p>
                     </div>
                   ))}
@@ -420,7 +416,7 @@ export function ExtractedDataForm({
                     { label: 'Currency',        value: data.currency },
                   ].map(({ label, value }) => (
                     <div key={label} className="space-y-0.5">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">{label}</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 dark:text-slate-500">{label}</p>
                       <p className="text-sm text-neutral-700 dark:text-slate-300">{value || '—'}</p>
                     </div>
                   ))}
@@ -472,15 +468,15 @@ export function ExtractedDataForm({
                 )}
               </div>
               {lineOpen
-                ? <ChevronUp className="h-3.5 w-3.5 text-neutral-400" />
-                : <ChevronDown className="h-3.5 w-3.5 text-neutral-400" />}
+                ? <ChevronUp className="h-3.5 w-3.5 text-neutral-400 dark:text-slate-500" />
+                : <ChevronDown className="h-3.5 w-3.5 text-neutral-400 dark:text-slate-500" />}
             </button>
 
             {lineOpen && (
               <div className="border-t border-neutral-50 dark:border-slate-800 bg-white dark:bg-slate-900/50">
                 {(data.line_items?.length ?? 0) > 0
                   ? <LineTable items={data.line_items} />
-                  : <p className="px-5 py-8 text-center text-xs text-neutral-400">No line items extracted</p>}
+                  : <p className="px-5 py-8 text-center text-xs text-neutral-400 dark:text-slate-500">No line items extracted</p>}
               </div>
             )}
           </div>

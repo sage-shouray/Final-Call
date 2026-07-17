@@ -146,6 +146,23 @@ async def create_company(body: dict[str, Any], current_user: CurrentUser) -> dic
         return tenant.to_dict()
 
 
+@router.delete("/companies/{tenant_id}", status_code=204)
+async def delete_company(tenant_id: str, current_user: CurrentUser) -> None:
+    _require_super_admin(current_user)
+    async with AsyncSessionLocal() as session:
+        tenant = (await session.execute(select(TenantRow).where(TenantRow.id == tenant_id))).scalar_one_or_none()
+        if not tenant:
+            raise HTTPException(status_code=404, detail="Company not found.")
+
+        await session.execute(text("DELETE FROM documents WHERE tenant_id = :tid"), {"tid": tenant_id})
+        await session.execute(text("DELETE FROM users WHERE tenant_id = :tid"), {"tid": tenant_id})
+        await session.execute(text("DELETE FROM pricing_configs WHERE tenant_id = :tid"), {"tid": tenant_id})
+        await session.execute(text("DELETE FROM tenant_api_configs WHERE tenant_id = :tid"), {"tid": tenant_id})
+        await session.execute(text("DELETE FROM billing_records WHERE tenant_id = :tid"), {"tid": tenant_id})
+        await session.delete(tenant)
+        await session.commit()
+
+
 @router.get("/companies/{tenant_id}")
 async def get_company(tenant_id: str, current_user: CurrentUser) -> dict[str, Any]:
     _require_super_admin(current_user)
@@ -205,6 +222,8 @@ async def add_company_user(tenant_id: str, body: dict[str, Any], current_user: C
     password = body.get("password", "")
     if not email or not name or not password:
         raise HTTPException(status_code=422, detail="email, name, and password are required.")
+    if len(password) < 8:
+        raise HTTPException(status_code=422, detail="Password must be at least 8 characters.")
 
     async with AsyncSessionLocal() as session:
         existing = (await session.execute(select(UserRow).where(UserRow.email == email))).scalar_one_or_none()
@@ -225,6 +244,7 @@ async def add_company_user(tenant_id: str, body: dict[str, Any], current_user: C
 @router.put("/companies/{tenant_id}/users/{user_id}")
 async def update_company_user(tenant_id: str, user_id: str, body: dict[str, Any], current_user: CurrentUser) -> dict[str, Any]:
     _require_super_admin(current_user)
+    from src.services.auth_service import AuthService
     async with AsyncSessionLocal() as session:
         user = (await session.execute(select(UserRow).where(UserRow.id == user_id, UserRow.tenant_id == tenant_id))).scalar_one_or_none()
         if not user:
@@ -234,9 +254,26 @@ async def update_company_user(tenant_id: str, user_id: str, body: dict[str, Any]
                 setattr(user, field, body[field])
         if "is_active" in body:
             user.is_active = bool(body["is_active"])
+        if body.get("new_password"):
+            if len(body["new_password"]) < 8:
+                raise HTTPException(status_code=422, detail="Password must be at least 8 characters.")
+            user.hashed_password = AuthService().hash_password(body["new_password"])
         await session.commit()
         await session.refresh(user)
         return user.to_dict()
+
+
+@router.delete("/companies/{tenant_id}/users/{user_id}", status_code=204)
+async def delete_company_user(tenant_id: str, user_id: str, current_user: CurrentUser) -> None:
+    _require_super_admin(current_user)
+    if user_id == current_user.sub:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account.")
+    async with AsyncSessionLocal() as session:
+        user = (await session.execute(select(UserRow).where(UserRow.id == user_id, UserRow.tenant_id == tenant_id))).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found.")
+        await session.delete(user)
+        await session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -425,25 +462,73 @@ async def get_company_billing(tenant_id: str, current_user: CurrentUser) -> dict
         }
 
 
+_MONTH_NAMES = [
+    "", "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+]
+
+
+async def _compute_tenant_month_billing(session: Any, tenant_id: str, month: int, year: int) -> dict[str, Any]:
+    """Live cost computation for one tenant/month — same logic as the per-company billing endpoint."""
+    rows = (await session.execute(text("""
+        SELECT d.tcode, COUNT(*) as doc_count, COALESCE(SUM(d.page_count), 0) as page_count
+        FROM documents d
+        WHERE d.tenant_id = :tid
+          AND EXTRACT(MONTH FROM d.uploaded_at) = :month
+          AND EXTRACT(YEAR  FROM d.uploaded_at) = :year
+          AND d.status IN ('posted','gr_posted','validated','simulated')
+        GROUP BY d.tcode
+    """), {"tid": tenant_id, "month": month, "year": year})).fetchall()
+
+    pricing: dict[str, PricingConfigRow] = {r.tcode: r for r in (await session.execute(
+        select(PricingConfigRow).where(PricingConfigRow.tenant_id == tenant_id)
+    )).scalars().all()}
+
+    total_documents = 0
+    total_pages = 0
+    total_amount = 0.0
+    for row in rows:
+        tcode, doc_count, page_count = row[0], row[1], row[2]
+        price = float(pricing[tcode].price_per_document) if tcode in pricing else 0.0
+        total_documents += doc_count
+        total_pages += int(page_count)
+        total_amount += doc_count * price
+
+    return {"total_documents": total_documents, "total_pages": total_pages, "total_amount": total_amount}
+
+
 @router.get("/billing")
-async def get_all_billing(current_user: CurrentUser) -> list[dict[str, Any]]:
+async def get_all_billing(current_user: CurrentUser) -> dict[str, Any]:
     _require_super_admin(current_user)
     now = datetime.now(UTC)
     async with AsyncSessionLocal() as session:
-        tenants = (await session.execute(select(TenantRow).where(TenantRow.is_active == True))).scalars().all()
-        result = []
+        tenants = (await session.execute(select(TenantRow).where(TenantRow.is_active == True).order_by(TenantRow.name))).scalars().all()
+
+        records: list[dict[str, Any]] = []
+        total_revenue = 0.0
+        this_month = 0.0
         for t in tenants:
-            rows = (await session.execute(text("""
-                SELECT COUNT(*) as doc_count
-                FROM documents d
-                WHERE d.tenant_id = :tid
-                  AND EXTRACT(MONTH FROM d.uploaded_at) = :month
-                  AND EXTRACT(YEAR  FROM d.uploaded_at) = :year
-                  AND d.status IN ('posted','gr_posted','validated','simulated')
-            """), {"tid": t.id, "month": now.month, "year": now.year})).fetchone()
-            doc_count = rows[0] if rows else 0
-            result.append({"tenant_id": t.id, "name": t.name, "doc_count": doc_count})
-        return result
+            live = await _compute_tenant_month_billing(session, t.id, now.month, now.year)
+            # All-time revenue = historical recorded charges + this month's live total
+            paid_history = (await session.execute(
+                select(func.coalesce(func.sum(BillingRecordRow.total_amount), 0))
+                .where(BillingRecordRow.tenant_id == t.id)
+            )).scalar() or 0
+            tenant_total_revenue = float(paid_history) + live["total_amount"]
+
+            records.append({
+                "tenant_id":       t.id,
+                "company_name":    t.name,
+                "month":           f"{_MONTH_NAMES[now.month]} {now.year}",
+                "total_documents": live["total_documents"],
+                "total_pages":     live["total_pages"],
+                "total_amount":    live["total_amount"],
+                "status":          "pending" if live["total_amount"] > 0 else "no activity",
+            })
+            total_revenue += tenant_total_revenue
+            this_month += live["total_amount"]
+
+        return {"records": records, "total_revenue": total_revenue, "this_month": this_month}
 
 
 # ---------------------------------------------------------------------------
@@ -453,36 +538,41 @@ async def get_all_billing(current_user: CurrentUser) -> list[dict[str, Any]]:
 @router.get("/activity")
 async def get_activity(
     current_user: CurrentUser,
-    tenant_id: str = "", limit: int = 100,
-) -> list[dict[str, Any]]:
+    tenant_id: str = "", q: str = "", limit: int = 100,
+) -> dict[str, Any]:
     _require_super_admin(current_user)
     async with AsyncSessionLocal() as session:
-        stmt = select(DocumentRow).order_by(DocumentRow.uploaded_at.desc()).limit(limit)
+        # Pre-load lookup maps once instead of querying per-document (avoids N+1)
+        tenants  = {t.id: t.name for t in (await session.execute(select(TenantRow))).scalars().all()}
+        users    = {u.id: u.name for u in (await session.execute(select(UserRow))).scalars().all()}
+
+        stmt = select(DocumentRow).order_by(DocumentRow.uploaded_at.desc())
         if tenant_id:
             stmt = stmt.where(DocumentRow.tenant_id == tenant_id)
-        docs = (await session.execute(stmt)).scalars().all()
+        if q:
+            like = f"%{q.lower()}%"
+            matching_tenant_ids = [tid for tid, name in tenants.items() if q.lower() in name.lower()]
+            stmt = stmt.where(
+                func.lower(DocumentRow.document_id).like(like)
+                | func.lower(DocumentRow.type).like(like)
+                | func.lower(DocumentRow.tcode).like(like)
+                | DocumentRow.tenant_id.in_(matching_tenant_ids or [""])
+            )
+
+        total = (await session.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
+        docs = (await session.execute(stmt.limit(limit))).scalars().all()
 
         result = []
         for d in docs:
-            user_name = ""
-            user = (await session.execute(select(UserRow).where(UserRow.id == d.uploaded_by))).scalar_one_or_none()
-            if user:
-                user_name = user.name
-            tenant_name = ""
-            if d.tenant_id:
-                t = (await session.execute(select(TenantRow).where(TenantRow.id == d.tenant_id))).scalar_one_or_none()
-                if t:
-                    tenant_name = t.name
             result.append({
                 "document_id":   d.document_id,
                 "type":          d.type,
                 "tcode":         d.tcode,
                 "status":        d.status,
                 "page_count":    d.page_count,
-                "uploaded_by":   d.uploaded_by,
-                "user_name":     user_name,
+                "uploaded_by":   users.get(d.uploaded_by, d.uploaded_by),
                 "tenant_id":     d.tenant_id,
-                "tenant_name":   tenant_name,
+                "company_name":  tenants.get(d.tenant_id, "—") if d.tenant_id else "—",
                 "uploaded_at":   d.uploaded_at.isoformat() if d.uploaded_at else "",
             })
-        return result
+        return {"documents": result, "total": total}

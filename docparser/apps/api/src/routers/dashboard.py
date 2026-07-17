@@ -14,7 +14,6 @@ from src.utils.redis_client import get_redis
 log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
-_CACHE_KEY = "cache:dashboard:metrics"
 _CACHE_TTL = 60
 
 
@@ -46,10 +45,13 @@ def _build_response(raw: dict[str, Any]) -> dict[str, Any]:
 
 @router.get("/metrics", summary="Aggregated KPI metrics for the dashboard")
 async def get_metrics(current_user: CurrentUser) -> dict[str, Any]:
-    redis = get_redis()
+    # Super-admin (no tenant) sees global metrics; everyone else sees their company only
+    tenant_id: str | None = getattr(current_user, "tenant_id", None)
+    cache_key = f"cache:dashboard:metrics:{tenant_id or 'global'}"
 
+    redis = get_redis()
     try:
-        cached = await redis.get(_CACHE_KEY)
+        cached = await redis.get(cache_key)
         if cached:
             return json.loads(cached)
     except Exception:
@@ -57,12 +59,12 @@ async def get_metrics(current_user: CurrentUser) -> dict[str, Any]:
 
     from src.database import AsyncSessionLocal
     async with AsyncSessionLocal() as session:
-        raw = await DocumentRepository(session).get_dashboard_metrics()
+        raw = await DocumentRepository(session).get_dashboard_metrics(tenant_id=tenant_id)
 
     result = _build_response(raw)
 
     try:
-        await redis.setex(_CACHE_KEY, _CACHE_TTL, json.dumps(result, default=str))
+        await redis.setex(cache_key, _CACHE_TTL, json.dumps(result, default=str))
     except Exception as exc:
         log.warning("Dashboard cache write failed", error=str(exc))
 

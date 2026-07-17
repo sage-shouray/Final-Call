@@ -11,8 +11,10 @@ from fastapi.middleware.gzip import GZipMiddleware
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
 
+from sqlalchemy import text
+
 from src.config import settings
-from src.database import close_db, connect_db
+from src.database import close_db, connect_db, engine
 from src.utils.redis_client import close_redis, connect_redis
 
 # ---------------------------------------------------------------------------
@@ -88,6 +90,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         log.warning("Super-admin seed failed (non-fatal)", error=str(exc))
 
+    # Idempotent schema migrations — add any new columns without alembic
+    try:
+        async with engine.begin() as _conn:
+            await _conn.execute(text(
+                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS tenant_id VARCHAR"
+            ))
+            await _conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_documents_tenant_id ON documents(tenant_id)"
+            ))
+            await _conn.execute(text(
+                "ALTER TABLE audit_logs ALTER COLUMN document_id DROP NOT NULL"
+            ))
+        log.info("Schema migrations applied")
+    except Exception as exc:
+        log.warning("Schema migration failed (non-fatal)", error=str(exc))
+
     # Start background workers in the FastAPI event loop
     from src.workers.change_stream_worker import start_change_stream_worker
     from src.workers.event_consumer import start_event_consumer
@@ -156,6 +174,7 @@ setup_exception_handlers(app)
 from src.middleware.auth import AuthMiddleware  # noqa: E402
 from src.middleware.logging import RequestLoggingMiddleware  # noqa: E402
 from src.middleware.rate_limit import RateLimitMiddleware  # noqa: E402
+from src.middleware.security_headers import SecurityHeadersMiddleware  # noqa: E402
 from starlette.middleware.cors import CORSMiddleware  # noqa: E402
 
 # 1 — innermost: RateLimit (needs request.state.user set by Auth)
@@ -167,10 +186,13 @@ app.add_middleware(AuthMiddleware)
 # 3 — Logging generates request_id and wraps timing around Auth + RateLimit
 app.add_middleware(RequestLoggingMiddleware)
 
-# 4 — Gzip compresses outbound responses
+# 4 — Security headers on every response
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 5 — Gzip compresses outbound responses
 app.add_middleware(GZipMiddleware, minimum_size=1_000)
 
-# 5 — outermost: CORS sets response headers before anything else runs
+# 6 — outermost: CORS sets response headers before anything else runs
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[str(o) for o in settings.CORS_ORIGINS],

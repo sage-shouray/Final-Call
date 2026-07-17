@@ -59,8 +59,8 @@ function Collapsible({
       >
         {title}
         {open
-          ? <ChevronUp   className="h-4 w-4 text-neutral-400" />
-          : <ChevronDown className="h-4 w-4 text-neutral-400" />
+          ? <ChevronUp   className="h-4 w-4 text-neutral-400 dark:text-neutral-500" />
+          : <ChevronDown className="h-4 w-4 text-neutral-400 dark:text-neutral-500" />
         }
       </button>
       {open && <div className="border-t border-neutral-100 px-5 py-4 dark:border-neutral-700">{children}</div>}
@@ -260,30 +260,30 @@ function Timeline({ doc }: { doc: Document }) {
           {i < steps.length - 1 && (
             <div className={cn(
               'absolute left-[13px] top-7 bottom-0 w-0.5 transition-colors',
-              step.done ? 'bg-green-200' : 'bg-neutral-100',
+              step.done ? 'bg-green-200 dark:bg-green-900' : 'bg-neutral-100 dark:bg-neutral-800',
             )} />
           )}
 
           {/* Icon */}
           <div className="relative z-10 mt-0.5 shrink-0">
             {step.done && (
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-green-100">
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-green-100 dark:bg-green-950">
+                <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
               </div>
             )}
             {step.active && (
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-100">
-                <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-950">
+                <Loader2 className="h-4 w-4 animate-spin text-indigo-600 dark:text-indigo-400" />
               </div>
             )}
             {step.failed && (
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-red-100">
-                <AlertCircle className="h-4 w-4 text-red-600" />
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-red-100 dark:bg-red-950">
+                <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
               </div>
             )}
             {!step.done && !step.active && !step.failed && (
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-100">
-                <Clock className="h-3.5 w-3.5 text-neutral-400" />
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800">
+                <Clock className="h-3.5 w-3.5 text-neutral-400 dark:text-neutral-500" />
               </div>
             )}
           </div>
@@ -292,16 +292,16 @@ function Timeline({ doc }: { doc: Document }) {
           <div className="min-w-0 flex-1 pb-5">
             <p className={cn(
               'text-xs font-semibold',
-              step.done   ? 'text-neutral-800'
-              : step.active ? 'text-indigo-700'
-              : step.failed ? 'text-red-700'
-              : 'text-neutral-400',
+              step.done   ? 'text-neutral-800 dark:text-neutral-100'
+              : step.active ? 'text-indigo-700 dark:text-indigo-400'
+              : step.failed ? 'text-red-700 dark:text-red-400'
+              : 'text-neutral-400 dark:text-neutral-500',
             )}>
               {step.label}
             </p>
-            <p className="mt-0.5 text-xs text-neutral-400">{step.description}</p>
+            <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">{step.description}</p>
             {step.timestamp && (
-              <p className="mt-0.5 text-[10px] text-neutral-300 font-mono">
+              <p className="mt-0.5 text-[10px] text-neutral-300 dark:text-neutral-600 font-mono">
                 {formatDateTime(step.timestamp)}
               </p>
             )}
@@ -335,16 +335,16 @@ function AuditDrawer({ docId, open, onClose }: { docId: string; open: boolean; o
       />
       <div
         className={cn(
-          'fixed inset-y-0 right-0 z-40 flex w-96 flex-col bg-white shadow-xl transition-transform duration-300',
+          'fixed inset-y-0 right-0 z-40 flex w-96 flex-col bg-white shadow-xl transition-transform duration-300 dark:bg-neutral-900',
           open ? 'translate-x-0' : 'translate-x-full',
         )}
       >
-        <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
-          <h3 className="text-sm font-semibold text-neutral-900">Audit Log</h3>
+        <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4 dark:border-neutral-800">
+          <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">Audit Log</h3>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-100 transition-colors"
+            className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
           >
             <X className="h-4 w-4" />
           </button>
@@ -363,26 +363,26 @@ function AuditDrawer({ docId, open, onClose }: { docId: string; open: boolean; o
           )}
 
           {!isLoading && (!entries || entries.length === 0) && (
-            <p className="text-center text-sm text-neutral-400 py-8">No audit entries found.</p>
+            <p className="text-center text-sm text-neutral-400 dark:text-neutral-500 py-8">No audit entries found.</p>
           )}
 
           {!isLoading && entries && entries.length > 0 && (
             <div className="space-y-3">
               {entries.map((e, i) => (
-                <div key={e.id ?? i} className="rounded-lg border border-neutral-100 bg-neutral-50 p-3">
+                <div key={e.id ?? i} className="rounded-lg border border-neutral-100 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-800/50">
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-xs font-semibold text-neutral-800">
+                    <span className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">
                       {e.action ?? e.stage ?? 'Event'}
                     </span>
-                    <span className="shrink-0 text-[10px] font-mono text-neutral-400">
+                    <span className="shrink-0 text-[10px] font-mono text-neutral-400 dark:text-neutral-500">
                       {formatDateTime(e.timestamp)}
                     </span>
                   </div>
                   {(e.message ?? e.detail) && (
-                    <p className="mt-1 text-xs text-neutral-500">{e.message ?? e.detail}</p>
+                    <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{e.message ?? e.detail}</p>
                   )}
                   {e.user && (
-                    <p className="mt-1 text-[10px] text-neutral-300">by {e.user}</p>
+                    <p className="mt-1 text-[10px] text-neutral-300 dark:text-neutral-600">by {e.user}</p>
                   )}
                 </div>
               ))}
@@ -405,38 +405,38 @@ function SummaryStrip({ doc }: { doc: Document }) {
   const miro      = doc.miro_posting  as { miro_number?: string; status?: string } | null;
 
   const sapRef = isNonPO
-    ? fb60?.fb60_number   ? { label: 'FB60 No.',  value: fb60.fb60_number,   color: 'text-indigo-700' } : null
+    ? fb60?.fb60_number   ? { label: 'FB60 No.',  value: fb60.fb60_number,   color: 'text-indigo-700 dark:text-indigo-400' } : null
     : isMigo
-      ? grn?.grn_number   ? { label: 'GRN No.',   value: grn.grn_number,    color: 'text-teal-700'   } : null
-      : miro?.miro_number ? { label: 'MIRO No.',  value: miro.miro_number,  color: 'text-green-700'  } : null;
+      ? grn?.grn_number   ? { label: 'GRN No.',   value: grn.grn_number,    color: 'text-teal-700 dark:text-teal-400'   } : null
+      : miro?.miro_number ? { label: 'MIRO No.',  value: miro.miro_number,  color: 'text-green-700 dark:text-green-400'  } : null;
 
   return (
-    <div className="grid grid-cols-1 gap-px rounded-xl border border-neutral-200 bg-neutral-200 overflow-hidden sm:grid-cols-3">
+    <div className="grid grid-cols-1 gap-px rounded-xl border border-neutral-200 bg-neutral-200 overflow-hidden sm:grid-cols-3 dark:border-neutral-800 dark:bg-neutral-800">
       {/* Vendor & invoice */}
-      <div className="bg-white px-5 py-4">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Vendor</p>
-        <p className="mt-1 truncate text-sm font-semibold text-neutral-900">
+      <div className="bg-white px-5 py-4 dark:bg-neutral-900">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Vendor</p>
+        <p className="mt-1 truncate text-sm font-semibold text-neutral-900 dark:text-white">
           {extracted?.vendor_name || '—'}
         </p>
-        <p className="mt-0.5 font-mono text-xs text-neutral-500">
+        <p className="mt-0.5 font-mono text-xs text-neutral-500 dark:text-neutral-400">
           {extracted?.invoice_no || doc.document_id.slice(0, 8) + '…'}
         </p>
       </div>
 
       {/* Status & type */}
-      <div className="bg-white px-5 py-4">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Status</p>
+      <div className="bg-white px-5 py-4 dark:bg-neutral-900">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Status</p>
         <div className="mt-1.5 flex items-center gap-2 flex-wrap">
           <StatusPill status={doc.status as DocumentStatus} />
           <TCodeChip tcode={doc.tcode} />
         </div>
-        <p className="mt-1 text-xs text-neutral-400">{formatDate(doc.uploaded_at)}</p>
+        <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">{formatDate(doc.uploaded_at)}</p>
       </div>
 
       {/* Amount & SAP reference number */}
-      <div className="bg-white px-5 py-4">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Amount</p>
-        <p className="mt-1 text-sm font-bold text-neutral-900 tabular-nums">
+      <div className="bg-white px-5 py-4 dark:bg-neutral-900">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Amount</p>
+        <p className="mt-1 text-sm font-bold text-neutral-900 tabular-nums dark:text-white">
           {extracted?.gross_amount ? toINR(Number(extracted.gross_amount)) : '—'}
         </p>
         {sapRef ? (
@@ -492,9 +492,9 @@ export default function DocumentDetailPage() {
         <Topbar title="Document" />
         <div className="space-y-5 p-6">
           <Skeleton className="h-6 w-48" />
-          <div className="grid gap-px rounded-xl border border-neutral-200 bg-neutral-200 sm:grid-cols-3">
+          <div className="grid gap-px rounded-xl border border-neutral-200 bg-neutral-200 sm:grid-cols-3 dark:border-neutral-800 dark:bg-neutral-800">
             {[1,2,3].map((i) => (
-              <div key={i} className="bg-white p-5"><Skeleton lines={3} /></div>
+              <div key={i} className="bg-white p-5 dark:bg-neutral-900"><Skeleton lines={3} /></div>
             ))}
           </div>
           <div className="grid gap-5 lg:grid-cols-3">
@@ -516,8 +516,8 @@ export default function DocumentDetailPage() {
       <>
         <Topbar title="Document" />
         <div className="flex h-64 flex-col items-center justify-center gap-3 p-6">
-          <AlertCircle className="h-8 w-8 text-neutral-300" />
-          <p className="text-sm text-neutral-400">Document not found or could not be loaded.</p>
+          <AlertCircle className="h-8 w-8 text-neutral-300 dark:text-neutral-700" />
+          <p className="text-sm text-neutral-400 dark:text-neutral-500">Document not found or could not be loaded.</p>
           <button
             type="button"
             onClick={() => navigate('/documents')}
@@ -617,7 +617,7 @@ export default function DocumentDetailPage() {
         <button
           type="button"
           onClick={() => setAuditOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 transition-colors"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700 transition-colors"
         >
           <ClipboardList className="h-3.5 w-3.5" />
           Audit Log
@@ -630,7 +630,7 @@ export default function DocumentDetailPage() {
         <button
           type="button"
           onClick={() => navigate(-1)}
-          className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 transition-colors"
+          className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-100 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Back
@@ -676,9 +676,9 @@ export default function DocumentDetailPage() {
                   <Row label="Confidence"     value={
                     <span className={cn(
                       'rounded-full px-2 py-0.5 text-xs font-semibold',
-                      extracted.confidence_score >= 0.75 ? 'bg-green-100 text-green-700'
-                      : extracted.confidence_score >= 0.5 ? 'bg-amber-100 text-amber-700'
-                      : 'bg-red-100 text-red-700',
+                      extracted.confidence_score >= 0.75 ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400'
+                      : extracted.confidence_score >= 0.5 ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400'
+                      : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400',
                     )}>
                       {Math.round(extracted.confidence_score * 100)}%
                     </span>
@@ -688,28 +688,28 @@ export default function DocumentDetailPage() {
                 {/* Line items mini-table */}
                 {extracted.line_items && extracted.line_items.length > 0 && (
                   <div className="mt-4">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
                       Line Items ({extracted.line_items.length})
                     </p>
-                    <div className="overflow-x-auto rounded-lg border border-neutral-100">
+                    <div className="overflow-x-auto rounded-lg border border-neutral-100 dark:border-neutral-800">
                       <table className="w-full text-xs">
-                        <thead className="bg-neutral-50">
-                          <tr className="border-b border-neutral-100">
+                        <thead className="bg-neutral-50 dark:bg-neutral-800/50">
+                          <tr className="border-b border-neutral-100 dark:border-neutral-800">
                             {['#', 'Material', 'Description', 'Qty', 'UOM', 'Rate', 'Amount'].map((h) => (
-                              <th key={h} className="px-3 py-2 text-left font-semibold uppercase tracking-wider text-neutral-400">{h}</th>
+                              <th key={h} className="px-3 py-2 text-left font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">{h}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
                           {extracted.line_items.map((li, i) => (
-                            <tr key={i} className="border-b border-neutral-50 last:border-0 hover:bg-neutral-50">
-                              <td className="px-3 py-2 font-mono text-neutral-500">{li.line_number}</td>
-                              <td className="px-3 py-2 font-mono text-neutral-600">{li.material_code}</td>
-                              <td className="px-3 py-2 text-neutral-700 max-w-[200px] truncate">{li.description}</td>
-                              <td className="px-3 py-2 tabular-nums">{li.quantity}</td>
-                              <td className="px-3 py-2">{li.uom}</td>
-                              <td className="px-3 py-2 tabular-nums">{li.unit_rate}</td>
-                              <td className="px-3 py-2 tabular-nums font-medium">{li.amount}</td>
+                            <tr key={i} className="border-b border-neutral-50 last:border-0 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-800/40">
+                              <td className="px-3 py-2 font-mono text-neutral-500 dark:text-neutral-400">{li.line_number}</td>
+                              <td className="px-3 py-2 font-mono text-neutral-600 dark:text-neutral-400">{li.material_code}</td>
+                              <td className="px-3 py-2 text-neutral-700 max-w-[200px] truncate dark:text-neutral-300">{li.description}</td>
+                              <td className="px-3 py-2 tabular-nums dark:text-neutral-300">{li.quantity}</td>
+                              <td className="px-3 py-2 dark:text-neutral-300">{li.uom}</td>
+                              <td className="px-3 py-2 tabular-nums dark:text-neutral-300">{li.unit_rate}</td>
+                              <td className="px-3 py-2 tabular-nums font-medium dark:text-neutral-200">{li.amount}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -738,22 +738,22 @@ export default function DocumentDetailPage() {
 
                 {validation.mismatches.length > 0 && (
                   <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
                       Mismatches ({validation.mismatches.length})
                     </p>
-                    <div className="divide-y divide-neutral-100 rounded-lg border border-neutral-100 overflow-hidden">
+                    <div className="divide-y divide-neutral-100 rounded-lg border border-neutral-100 overflow-hidden dark:divide-neutral-800 dark:border-neutral-800">
                       {validation.mismatches.map((m, i) => (
                         <div key={i} className={cn(
                           'flex items-start gap-3 px-3 py-2.5 text-xs',
-                          m.severity === 'error' ? 'bg-red-50/50' : 'bg-amber-50/50',
+                          m.severity === 'error' ? 'bg-red-50/50 dark:bg-red-950/30' : 'bg-amber-50/50 dark:bg-amber-950/30',
                         )}>
                           <span className={cn(
                             'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase',
-                            m.severity === 'error' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600',
+                            m.severity === 'error' ? 'bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400',
                           )}>{m.severity}</span>
                           <div className="flex-1">
-                            <span className="font-medium text-neutral-800">{m.field}</span>
-                            <span className="ml-2 text-neutral-400">
+                            <span className="font-medium text-neutral-800 dark:text-neutral-200">{m.field}</span>
+                            <span className="ml-2 text-neutral-400 dark:text-neutral-500">
                               Invoice: {m.extracted_value} · SAP: {m.sap_value}
                             </span>
                           </div>
@@ -769,23 +769,23 @@ export default function DocumentDetailPage() {
             {isMigo && grn && (
               <div className={cn(
                 'rounded-xl border overflow-hidden',
-                grn.status === 'success' ? 'border-teal-200' : 'border-red-200',
+                grn.status === 'success' ? 'border-teal-200 dark:border-teal-800' : 'border-red-200 dark:border-red-900',
               )}>
                 {/* Header */}
-                <div className={cn('flex items-center justify-between px-5 py-4', grn.status === 'success' ? 'bg-teal-50' : 'bg-red-50')}>
+                <div className={cn('flex items-center justify-between px-5 py-4', grn.status === 'success' ? 'bg-teal-50 dark:bg-teal-950/30' : 'bg-red-50 dark:bg-red-950/30')}>
                   <div className="flex items-center gap-3">
-                    <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', grn.status === 'success' ? 'bg-teal-100' : 'bg-red-100')}>
-                      <CheckCircle2 className={cn('h-4 w-4', grn.status === 'success' ? 'text-teal-600' : 'text-red-500')} />
+                    <div className={cn('flex h-9 w-9 items-center justify-center rounded-full', grn.status === 'success' ? 'bg-teal-100 dark:bg-teal-900' : 'bg-red-100 dark:bg-red-900')}>
+                      <CheckCircle2 className={cn('h-4 w-4', grn.status === 'success' ? 'text-teal-600 dark:text-teal-400' : 'text-red-500 dark:text-red-400')} />
                     </div>
                     <div>
-                      <p className={cn('text-sm font-semibold', grn.status === 'success' ? 'text-teal-900' : 'text-red-900')}>
+                      <p className={cn('text-sm font-semibold', grn.status === 'success' ? 'text-teal-900 dark:text-teal-300' : 'text-red-900 dark:text-red-300')}>
                         {grn.already_done
                           ? 'MIGO Already Done — GR Previously Posted'
                           : grn.status === 'success'
                             ? 'Goods Receipt Posted Successfully'
                             : 'GR Posting Failed'}
                       </p>
-                      <p className={cn('text-xs', grn.status === 'success' ? 'text-teal-600' : 'text-red-500')}>
+                      <p className={cn('text-xs', grn.status === 'success' ? 'text-teal-600 dark:text-teal-400' : 'text-red-500 dark:text-red-400')}>
                         {grn.already_done
                           ? 'Quantities already received in SAP — you can proceed to MIRO'
                           : String(grn.posted_at ?? '')}
@@ -794,8 +794,8 @@ export default function DocumentDetailPage() {
                   </div>
                   {grn.grn_number && (
                     <div className="text-right">
-                      <p className="text-[10px] font-semibold uppercase tracking-widest text-teal-500">GRN Number</p>
-                      <p className="font-mono text-xl font-bold tracking-wide text-teal-900">{grn.grn_number}</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-teal-500 dark:text-teal-400">GRN Number</p>
+                      <p className="font-mono text-xl font-bold tracking-wide text-teal-900 dark:text-teal-300">{grn.grn_number}</p>
                     </div>
                   )}
                 </div>
@@ -814,39 +814,39 @@ export default function DocumentDetailPage() {
                   return (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
-                        <thead className="bg-teal-100/60">
+                        <thead className="bg-teal-100/60 dark:bg-teal-900/40">
                           <tr>
-                            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700">PO Item</th>
-                            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700">Material</th>
-                            {sapItems && <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700">Description</th>}
-                            <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-teal-700">Qty Received</th>
-                            {sapItems && <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700">UOM</th>}
-                            <th className="px-4 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-teal-700">Status</th>
+                            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-400">PO Item</th>
+                            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-400">Material</th>
+                            {sapItems && <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-400">Description</th>}
+                            <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-400">Qty Received</th>
+                            {sapItems && <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-400">UOM</th>}
+                            <th className="px-4 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-400">Status</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-teal-100 bg-white">
+                        <tbody className="divide-y divide-teal-100 bg-white dark:divide-teal-900 dark:bg-neutral-900">
                           {sapItems
                             ? sapItems.map((item, idx) => (
-                              <tr key={idx} className="hover:bg-teal-50/40 transition-colors">
-                                <td className="px-4 py-3 font-mono text-xs text-neutral-700">{String(item.PO_ITEM ?? '')}</td>
-                                <td className="px-4 py-3 font-mono text-xs text-neutral-700">{String(item.MATERIAL ?? '')}</td>
-                                <td className="px-4 py-3 text-xs text-neutral-600">{String(item.MAT_DES ?? '')}</td>
-                                <td className="px-4 py-3 text-right font-medium text-neutral-800">{String(item.REV_QTY ?? '')}</td>
-                                <td className="px-4 py-3 text-xs text-neutral-500">{String(item.UNIT ?? '')}</td>
+                              <tr key={idx} className="hover:bg-teal-50/40 transition-colors dark:hover:bg-teal-950/30">
+                                <td className="px-4 py-3 font-mono text-xs text-neutral-700 dark:text-neutral-300">{String(item.PO_ITEM ?? '')}</td>
+                                <td className="px-4 py-3 font-mono text-xs text-neutral-700 dark:text-neutral-300">{String(item.MATERIAL ?? '')}</td>
+                                <td className="px-4 py-3 text-xs text-neutral-600 dark:text-neutral-400">{String(item.MAT_DES ?? '')}</td>
+                                <td className="px-4 py-3 text-right font-medium text-neutral-800 dark:text-neutral-200">{String(item.REV_QTY ?? '')}</td>
+                                <td className="px-4 py-3 text-xs text-neutral-500 dark:text-neutral-400">{String(item.UNIT ?? '')}</td>
                                 <td className="px-4 py-3 text-center">
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-medium text-teal-700">
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-medium text-teal-700 dark:bg-teal-900 dark:text-teal-400">
                                     <CheckCircle2 className="h-3 w-3" /> Posted
                                   </span>
                                 </td>
                               </tr>
                             ))
                             : payloadItems!.map((item, idx) => (
-                              <tr key={idx} className="hover:bg-teal-50/40 transition-colors">
-                                <td className="px-4 py-3 font-mono text-xs text-neutral-700">{item.po_item}</td>
-                                <td className="px-4 py-3 font-mono text-xs text-neutral-700">{item.material}</td>
-                                <td className="px-4 py-3 text-right font-medium text-neutral-800">{item.quantity}</td>
+                              <tr key={idx} className="hover:bg-teal-50/40 transition-colors dark:hover:bg-teal-950/30">
+                                <td className="px-4 py-3 font-mono text-xs text-neutral-700 dark:text-neutral-300">{item.po_item}</td>
+                                <td className="px-4 py-3 font-mono text-xs text-neutral-700 dark:text-neutral-300">{item.material}</td>
+                                <td className="px-4 py-3 text-right font-medium text-neutral-800 dark:text-neutral-200">{item.quantity}</td>
                                 <td className="px-4 py-3 text-center">
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-medium text-teal-700">
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-medium text-teal-700 dark:bg-teal-900 dark:text-teal-400">
                                     <CheckCircle2 className="h-3 w-3" /> Posted
                                   </span>
                                 </td>
@@ -861,8 +861,8 @@ export default function DocumentDetailPage() {
 
                 {/* Error message */}
                 {grn.status !== 'success' && !!grn.sap_response?.MESSAGE && (
-                  <div className="px-5 py-3 bg-red-50">
-                    <p className="text-xs text-red-700 break-words">
+                  <div className="px-5 py-3 bg-red-50 dark:bg-red-950/30">
+                    <p className="text-xs text-red-700 break-words dark:text-red-400">
                       {Array.isArray(grn.sap_response.MESSAGE)
                         ? (grn.sap_response.MESSAGE as { MSG?: string }[]).map((m) => m.MSG ?? '').join(' | ')
                         : String(grn.sap_response.MESSAGE)}
@@ -877,36 +877,36 @@ export default function DocumentDetailPage() {
               <div className={cn(
                 'rounded-xl border p-5',
                 (doc.fb60_posting as { status?: string }).status === 'success'
-                  ? 'border-indigo-200 bg-indigo-50'
-                  : 'border-red-200 bg-red-50',
+                  ? 'border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/30'
+                  : 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30',
               )}>
                 <div className="flex items-center gap-3 mb-3">
                   <div className={cn(
                     'flex h-9 w-9 items-center justify-center rounded-full',
-                    (doc.fb60_posting as { status?: string }).status === 'success' ? 'bg-indigo-100' : 'bg-red-100',
+                    (doc.fb60_posting as { status?: string }).status === 'success' ? 'bg-indigo-100 dark:bg-indigo-900' : 'bg-red-100 dark:bg-red-900',
                   )}>
                     {(doc.fb60_posting as { status?: string }).status === 'success'
-                      ? <CheckCircle2 className="h-5 w-5 text-indigo-600" />
-                      : <AlertCircle  className="h-5 w-5 text-red-600" />}
+                      ? <CheckCircle2 className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                      : <AlertCircle  className="h-5 w-5 text-red-600 dark:text-red-400" />}
                   </div>
                   <div className="flex-1">
                     <p className={cn('text-sm font-semibold',
-                      (doc.fb60_posting as { status?: string }).status === 'success' ? 'text-indigo-900' : 'text-red-900',
+                      (doc.fb60_posting as { status?: string }).status === 'success' ? 'text-indigo-900 dark:text-indigo-300' : 'text-red-900 dark:text-red-300',
                     )}>
                       {(doc.fb60_posting as { status?: string }).status === 'success'
                         ? 'Non-PO Invoice Posted (FB60)'
                         : 'FB60 Posting Failed'}
                     </p>
                     <p className={cn('text-xs',
-                      (doc.fb60_posting as { status?: string }).status === 'success' ? 'text-indigo-600' : 'text-red-500',
+                      (doc.fb60_posting as { status?: string }).status === 'success' ? 'text-indigo-600 dark:text-indigo-400' : 'text-red-500 dark:text-red-400',
                     )}>
                       {formatDateTime((doc.fb60_posting as { posted_at?: string }).posted_at ?? '')}
                     </p>
                   </div>
                   {(doc.fb60_posting as { fb60_number?: string }).fb60_number ? (
                     <div className="text-right">
-                      <p className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400">FB60 Number</p>
-                      <p className="font-mono text-lg font-bold tracking-wide text-indigo-900">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400 dark:text-indigo-500">FB60 Number</p>
+                      <p className="font-mono text-lg font-bold tracking-wide text-indigo-900 dark:text-indigo-300">
                         {(doc.fb60_posting as { fb60_number?: string }).fb60_number}
                       </p>
                     </div>
@@ -916,7 +916,7 @@ export default function DocumentDetailPage() {
                   <ul className="mt-2 list-disc list-inside space-y-0.5">
                     {((doc.fb60_posting as { message?: string }).message ?? '').split(' | ').map((msg, i) => (
                       <li key={i} className={cn('text-xs',
-                        (doc.fb60_posting as { status?: string }).status === 'success' ? 'text-indigo-700' : 'text-red-700',
+                        (doc.fb60_posting as { status?: string }).status === 'success' ? 'text-indigo-700 dark:text-indigo-400' : 'text-red-700 dark:text-red-400',
                       )}>{msg}</li>
                     ))}
                   </ul>
@@ -928,29 +928,29 @@ export default function DocumentDetailPage() {
             {miro && (
               <div className={cn(
                 'rounded-xl border p-5',
-                miro.status === 'success' ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50',
+                miro.status === 'success' ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30' : 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30',
               )}>
                 <div className="flex items-center gap-3 mb-4">
                   <div className={cn(
                     'flex h-9 w-9 items-center justify-center rounded-full',
-                    miro.status === 'success' ? 'bg-green-100' : 'bg-red-100',
+                    miro.status === 'success' ? 'bg-green-100 dark:bg-green-900' : 'bg-red-100 dark:bg-red-900',
                   )}>
                     {miro.status === 'success'
-                      ? <CheckCircle2 className="h-5 w-5 text-green-600" />
-                      : <AlertCircle className="h-5 w-5 text-red-600" />}
+                      ? <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+                      : <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />}
                   </div>
                   <div>
-                    <p className={cn('text-sm font-semibold', miro.status === 'success' ? 'text-green-900' : 'text-red-900')}>
+                    <p className={cn('text-sm font-semibold', miro.status === 'success' ? 'text-green-900 dark:text-green-300' : 'text-red-900 dark:text-red-300')}>
                       {miro.status === 'success' ? 'Posted to SAP MIRO' : 'MIRO Posting Failed'}
                     </p>
-                    <p className={cn('text-xs', miro.status === 'success' ? 'text-green-600' : 'text-red-500')}>
+                    <p className={cn('text-xs', miro.status === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400')}>
                       {formatDateTime(miro.posted_at)}
                     </p>
                   </div>
                   {miro.miro_number && (
                     <div className="ml-auto text-right">
-                      <p className="text-[10px] font-semibold uppercase tracking-widest text-green-500">MIRO Number</p>
-                      <p className="font-mono text-lg font-bold tracking-wide text-green-900">{miro.miro_number}</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-green-500 dark:text-green-400">MIRO Number</p>
+                      <p className="font-mono text-lg font-bold tracking-wide text-green-900 dark:text-green-300">{miro.miro_number}</p>
                     </div>
                   )}
                 </div>
@@ -958,7 +958,7 @@ export default function DocumentDetailPage() {
                   {miro.status === 'success' ? 'Success' : 'Failed'}
                 </Badge>
                 {miro.sap_response?.MESSAGE ? (
-                  <p className="mt-2 text-xs text-red-700 break-words">
+                  <p className="mt-2 text-xs text-red-700 break-words dark:text-red-400">
                     {Array.isArray(miro.sap_response.MESSAGE)
                       ? (miro.sap_response.MESSAGE as { MSG?: string }[]).map((m) => m.MSG ?? '').join(' | ')
                       : String(miro.sap_response.MESSAGE)}
@@ -970,15 +970,15 @@ export default function DocumentDetailPage() {
             {/* Error log */}
             {doc.error_log && doc.error_log.length > 0 && (
               <Collapsible title={`Error Log (${doc.error_log.length})`} defaultOpen={status === DocumentStatus.FAILED}>
-                <div className="divide-y divide-neutral-100 rounded-lg border border-neutral-100 overflow-hidden">
+                <div className="divide-y divide-neutral-100 rounded-lg border border-neutral-100 overflow-hidden dark:divide-neutral-800 dark:border-neutral-800">
                   {doc.error_log.map((e, i) => (
-                    <div key={i} className="bg-red-50/40 px-3 py-2.5 text-xs">
+                    <div key={i} className="bg-red-50/40 px-3 py-2.5 text-xs dark:bg-red-950/20">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-red-700">{e.stage}</span>
-                        <span className="font-mono text-[10px] text-neutral-400">{formatDateTime(e.timestamp)}</span>
+                        <span className="font-semibold text-red-700 dark:text-red-400">{e.stage}</span>
+                        <span className="font-mono text-[10px] text-neutral-400 dark:text-neutral-500">{formatDateTime(e.timestamp)}</span>
                       </div>
-                      <p className="mt-0.5 text-neutral-700">{e.message}</p>
-                      {e.detail && <p className="mt-0.5 font-mono text-[10px] text-neutral-400">{e.detail}</p>}
+                      <p className="mt-0.5 text-neutral-700 dark:text-neutral-300">{e.message}</p>
+                      {e.detail && <p className="mt-0.5 font-mono text-[10px] text-neutral-400 dark:text-neutral-500">{e.detail}</p>}
                     </div>
                   ))}
                 </div>
@@ -988,18 +988,18 @@ export default function DocumentDetailPage() {
 
           {/* Right: timeline */}
           <div className="space-y-4">
-            <div className="rounded-xl border border-neutral-200 bg-white p-5">
+            <div className="rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900">
               <div className="mb-4 flex items-center gap-2">
-                <FileText className="h-4 w-4 text-neutral-400" />
-                <h3 className="text-sm font-semibold text-neutral-800">Processing Timeline</h3>
+                <FileText className="h-4 w-4 text-neutral-400 dark:text-neutral-500" />
+                <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Processing Timeline</h3>
               </div>
               <Timeline doc={doc} />
             </div>
 
             {/* Retry count */}
             {doc.retry_count > 0 && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-                <p className="text-xs font-semibold text-amber-700">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950/30">
+                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
                   {doc.retry_count} retry{doc.retry_count > 1 ? 's' : ''} attempted
                 </p>
               </div>

@@ -44,8 +44,8 @@ export function StepIndicator({ steps, currentStep }: StepIndicatorProps) {
                     <span
                       className={cn(
                         'text-xs font-semibold',
-                        state === 'active' && 'text-indigo-600',
-                        state === 'future' && 'text-neutral-400',
+                        state === 'active' && 'text-indigo-600 dark:text-indigo-400',
+                        state === 'future' && 'text-neutral-400 dark:text-neutral-500',
                       )}
                     >
                       {i + 1}
@@ -67,9 +67,9 @@ export function StepIndicator({ steps, currentStep }: StepIndicatorProps) {
             <span
               className={cn(
                 'mt-2 text-[11px] font-medium whitespace-nowrap transition-colors duration-200',
-                state === 'done'   && 'text-indigo-500',
+                state === 'done'   && 'text-indigo-500 dark:text-indigo-400',
                 state === 'active' && 'text-indigo-700 dark:text-indigo-300',
-                state === 'future' && 'text-neutral-400',
+                state === 'future' && 'text-neutral-400 dark:text-neutral-500',
               )}
             >
               {step.label}

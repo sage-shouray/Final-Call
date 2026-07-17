@@ -67,7 +67,7 @@ function MetricCard({ label, value, rawValue, footer, accent, alert }: MetricCar
            title={String(display)}>
           {display}
         </p>
-        {footer && <p className="mt-1.5 text-xs text-neutral-400">{footer}</p>}
+        {footer && <p className="mt-1.5 text-xs text-neutral-400 dark:text-neutral-500">{footer}</p>}
       </div>
     </div>
   );
@@ -147,7 +147,7 @@ function QuickAction({ label, tcode, icon: Icon, active, uploadType }: QuickActi
         'flex h-10 w-10 items-center justify-center rounded-lg',
         active ? 'bg-indigo-50 dark:bg-indigo-950' : 'bg-neutral-100 dark:bg-neutral-700',
       )}>
-        <Icon className={cn('h-5 w-5', active ? 'text-indigo-600' : 'text-neutral-400')} />
+        <Icon className={cn('h-5 w-5', active ? 'text-indigo-600 dark:text-indigo-400' : 'text-neutral-400 dark:text-neutral-500')} />
       </div>
       <div>
         <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">{label}</p>
@@ -198,7 +198,7 @@ export default function DashboardPage() {
     validated: 'bg-indigo-400',
     extracted: 'bg-indigo-300',
     failed:    'bg-red-400',
-    uploading: 'bg-neutral-300',
+    uploading: 'bg-neutral-300 dark:bg-neutral-600',
   };
   const statusTotal = metrics?.by_status.reduce((s, t) => s + t.count, 0) ?? 0;
   const sortedStatuses = [...(metrics?.by_status ?? [])].sort(
@@ -274,12 +274,12 @@ export default function DashboardPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-100 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900">
-                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Document</th>
-                  <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400">T-Code</th>
-                  <th className="px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Amount</th>
-                  <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400">GRN / MIRO No.</th>
-                  <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Status</th>
-                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Date</th>
+                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Document</th>
+                  <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">T-Code</th>
+                  <th className="px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Amount</th>
+                  <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">GRN / MIRO No.</th>
+                  <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Status</th>
+                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Date</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -292,12 +292,12 @@ export default function DashboardPage() {
                       <tr>
                         <td colSpan={5} className="py-16 text-center">
                           <div className="flex flex-col items-center gap-3">
-                            <div className="rounded-full bg-neutral-100 p-4">
-                              <FileText className="h-8 w-8 text-neutral-300" />
+                            <div className="rounded-full bg-neutral-100 p-4 dark:bg-neutral-700">
+                              <FileText className="h-8 w-8 text-neutral-300 dark:text-neutral-500" />
                             </div>
                             <div>
-                              <p className="text-sm font-medium text-neutral-500">No documents yet</p>
-                              <p className="mt-0.5 text-xs text-neutral-400">Upload your first invoice to get started</p>
+                              <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">No documents yet</p>
+                              <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">Upload your first invoice to get started</p>
                             </div>
                             <Button size="sm" icon={<Upload className="h-3.5 w-3.5" />} onClick={() => navigate('/upload')}>
                               Upload document
@@ -319,7 +319,7 @@ export default function DashboardPage() {
                             <p className="font-medium text-neutral-800 dark:text-neutral-200 font-mono text-xs">
                               {doc.document_id.slice(0, 12)}…
                             </p>
-                            <p className="mt-0.5 text-xs text-neutral-400 truncate max-w-[180px]">
+                            <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500 truncate max-w-[180px]">
                               {doc.vendor_name ?? '—'}
                             </p>
                           </td>
@@ -327,27 +327,27 @@ export default function DashboardPage() {
                             <TCodeChip tcode={doc.tcode} />
                           </td>
                           <td className="px-3 py-3.5 text-right">
-                            <span className="font-mono text-xs tabular-nums text-neutral-700">
+                            <span className="font-mono text-xs tabular-nums text-neutral-700 dark:text-neutral-300">
                               {doc.amount ? toINR(Number(doc.amount)) : '—'}
                             </span>
                           </td>
                           <td className="px-3 py-3.5">
                             <div className="flex flex-col gap-0.5">
                               {doc.grn_number && (
-                                <span className="font-mono text-xs font-semibold text-teal-700">GRN: {doc.grn_number}</span>
+                                <span className="font-mono text-xs font-semibold text-teal-700 dark:text-teal-400">GRN: {doc.grn_number}</span>
                               )}
                               {doc.miro_number && (
-                                <span className="font-mono text-xs font-semibold text-green-700">MIRO: {doc.miro_number}</span>
+                                <span className="font-mono text-xs font-semibold text-green-700 dark:text-green-400">MIRO: {doc.miro_number}</span>
                               )}
                               {!doc.grn_number && !doc.miro_number && (
-                                <span className="text-xs text-neutral-300">—</span>
+                                <span className="text-xs text-neutral-300 dark:text-neutral-600">—</span>
                               )}
                             </div>
                           </td>
                           <td className="px-3 py-3.5">
                             <StatusPill status={doc.status as DocumentStatus} />
                           </td>
-                          <td className="px-5 py-3.5 text-xs text-neutral-400">
+                          <td className="px-5 py-3.5 text-xs text-neutral-400 dark:text-neutral-500">
                             {formatDate(doc.uploaded_at)}
                           </td>
                         </tr>
@@ -381,7 +381,7 @@ export default function DashboardPage() {
                       ))}
                     </div>
                   )
-                  : <p className="text-xs text-neutral-400">No data</p>
+                  : <p className="text-xs text-neutral-400 dark:text-neutral-500">No data</p>
               }
             </div>
 
@@ -400,13 +400,13 @@ export default function DashboardPage() {
                           count={s.count}
                           total={statusTotal}
                           pct={s.percentage}
-                          color={statusColors[s.status] ?? 'bg-neutral-400'}
+                          color={statusColors[s.status] ?? 'bg-neutral-400 dark:bg-neutral-600'}
                           delay={i * 80}
                         />
                       ))}
                     </div>
                   )
-                  : <p className="text-xs text-neutral-400">No data</p>
+                  : <p className="text-xs text-neutral-400 dark:text-neutral-500">No data</p>
               }
             </div>
           </div>

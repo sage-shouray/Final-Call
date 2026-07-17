@@ -10,45 +10,22 @@ import { api } from './lib/api';
 
 const SETTINGS_KEY = 'uvira-app-prefs';
 
-function applyTheme(theme: string) {
-  const root = document.documentElement;
-  if (theme === 'dark') {
-    root.classList.add('dark');
-  } else if (theme === 'light') {
-    root.classList.remove('dark');
-  } else {
-    // system
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    root.classList.toggle('dark', prefersDark);
-  }
-}
-
 function applyStoredPrefs() {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) { applyTheme('system'); return; }
-    const prefs = JSON.parse(raw) as { compactSidebar?: boolean; theme?: string };
-    applyTheme(prefs.theme ?? 'system');
-    if (prefs.compactSidebar) {
-      useUIStore.getState().setSidebarCollapsed(true);
-    }
-  } catch { /* ignore */ }
+    const prefs = raw ? (JSON.parse(raw) as { compactSidebar?: boolean; theme?: 'light' | 'dark' }) : {};
+    if (prefs.compactSidebar) useUIStore.getState().setSidebarCollapsed(true);
+    // Apply the saved theme on every boot — default to light if none saved yet.
+    document.documentElement.classList.toggle('dark', prefs.theme === 'dark');
+  } catch {
+    document.documentElement.classList.remove('dark');
+  }
 }
-
 applyStoredPrefs();
 
 // One-time migration: clear any auth tokens left in localStorage from before
 // the switch to sessionStorage, so old sessions can't bypass login.
 try { localStorage.removeItem('docparser-auth'); } catch { /* ignore */ }
-
-// Keep in sync if the OS theme changes while the tab is open
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    const prefs = raw ? JSON.parse(raw) as { theme?: string } : {};
-    if (!prefs.theme || prefs.theme === 'system') applyTheme('system');
-  } catch { /* ignore */ }
-});
 
 function KeyboardShortcuts() {
   const { toggleSidebar } = useUIStore();

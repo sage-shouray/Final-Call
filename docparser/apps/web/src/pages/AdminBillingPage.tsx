@@ -27,7 +27,7 @@ export default function AdminBillingPage() {
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-neutral-900 dark:text-white">Billing & Revenue</h1>
-        <p className="text-sm text-neutral-500 mt-0.5">Monthly billing records across all companies</p>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">Monthly billing records across all companies</p>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
@@ -38,7 +38,7 @@ export default function AdminBillingPage() {
         ].map(s => (
           <div key={s.label} className="rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-neutral-500">{s.label}</p>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">{s.label}</p>
               <span className={cn('flex h-8 w-8 items-center justify-center rounded-lg', s.color)}>
                 <s.icon className="h-4 w-4" />
               </span>
@@ -53,9 +53,9 @@ export default function AdminBillingPage() {
           <h2 className="text-base font-semibold text-neutral-900 dark:text-white">Billing Records</h2>
         </div>
         {isLoading ? (
-          <p className="text-center text-neutral-400 py-16 text-sm">Loading…</p>
+          <p className="text-center text-neutral-400 dark:text-neutral-500 py-16 text-sm">Loading…</p>
         ) : records.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-16 text-neutral-400">
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-neutral-400 dark:text-neutral-500">
             <Building2 className="h-10 w-10 opacity-30" />
             <p className="text-sm">No billing records yet.</p>
           </div>
@@ -65,7 +65,7 @@ export default function AdminBillingPage() {
               <thead>
                 <tr className="border-b border-neutral-100 dark:border-neutral-800">
                   {['Company', 'Month', 'Documents', 'Pages', 'Amount', 'Status'].map(h => (
-                    <th key={h} className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-400">{h}</th>
+                    <th key={h} className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -73,9 +73,9 @@ export default function AdminBillingPage() {
                 {records.map((r, i) => (
                   <tr key={i} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
                     <td className="px-6 py-3 font-medium text-neutral-800 dark:text-white">{r.company_name}</td>
-                    <td className="px-6 py-3 text-neutral-500">{r.month}</td>
-                    <td className="px-6 py-3 tabular-nums text-neutral-600">{r.total_documents.toLocaleString('en-IN')}</td>
-                    <td className="px-6 py-3 tabular-nums text-neutral-600">{r.total_pages.toLocaleString('en-IN')}</td>
+                    <td className="px-6 py-3 text-neutral-500 dark:text-neutral-400">{r.month}</td>
+                    <td className="px-6 py-3 tabular-nums text-neutral-600 dark:text-neutral-400">{r.total_documents.toLocaleString('en-IN')}</td>
+                    <td className="px-6 py-3 tabular-nums text-neutral-600 dark:text-neutral-400">{r.total_pages.toLocaleString('en-IN')}</td>
                     <td className="px-6 py-3 tabular-nums font-semibold text-emerald-700 dark:text-emerald-400">{fmtINR(r.total_amount)}</td>
                     <td className="px-6 py-3">
                       <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium capitalize',

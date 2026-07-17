@@ -253,9 +253,10 @@ class SAPService:
                 resp.raise_for_status()
                 return resp.json()
             except httpx.HTTPStatusError as exc:
-                log.warning("SAP HTTP error", url=url, status=exc.response.status_code)
+                body_text = exc.response.text[:300]
+                log.warning("SAP HTTP error", url=url, status=exc.response.status_code, body=body_text)
                 raise SAPConnectionError(
-                    f"SAP returned HTTP {exc.response.status_code}",
+                    f"SAP returned HTTP {exc.response.status_code}: {body_text}",
                     status_code=502,
                 ) from exc
             except httpx.TimeoutException as exc:

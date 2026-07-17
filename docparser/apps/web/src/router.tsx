@@ -18,6 +18,7 @@ const AdminBillingPage    = lazy(() => import('@/pages/AdminBillingPage'));
 const AdminActivityPage   = lazy(() => import('@/pages/AdminActivityPage'));
 
 const TeamPage           = lazy(() => import('@/pages/TeamPage'));
+const BillingPage        = lazy(() => import('@/pages/BillingPage'));
 
 const LoginPage          = lazy(() => import('@/pages/LoginPage'));
 const DashboardPage      = lazy(() => import('@/pages/DashboardPage'));
@@ -131,6 +132,14 @@ const routes: RouteObject[] = [
         element: (
           <Suspense fallback={<PageFallback />}>
             <TeamPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/billing',
+        element: (
+          <Suspense fallback={<PageFallback />}>
+            <BillingPage />
           </Suspense>
         ),
       },

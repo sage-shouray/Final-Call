@@ -124,11 +124,11 @@ function ExtractionSkeleton({ fileName, fileSize }: { fileName: string; fileSize
       <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3.5 dark:border-neutral-700">
         <div>
           <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Gemini AI · OCR Extraction</h3>
-          <p className="mt-0.5 text-xs text-neutral-400">Usually takes 8–15 seconds</p>
+          <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">Usually takes 8–15 seconds</p>
         </div>
         <div className="text-right">
           <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400 truncate max-w-[160px]">{fileName}</p>
-          <p className="text-xs text-neutral-400">{kb} KB</p>
+          <p className="text-xs text-neutral-400 dark:text-neutral-500">{kb} KB</p>
         </div>
       </div>
       <div className="p-5 space-y-6">
@@ -480,7 +480,7 @@ export default function UploadPage() {
                           <p className={`text-sm font-semibold ${state.invoiceSubtype === opt.value ? 'text-indigo-700 dark:text-indigo-300' : 'text-neutral-800 dark:text-neutral-200'}`}>
                             {opt.label}
                           </p>
-                          <p className="mt-1 text-xs text-neutral-500">{opt.desc}</p>
+                          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{opt.desc}</p>
                         </button>
                       ))}
                     </div>
@@ -492,7 +492,7 @@ export default function UploadPage() {
             <div className={`rounded-xl border border-neutral-200 bg-white p-5 space-y-3 dark:border-neutral-700 dark:bg-neutral-900 ${needsSubtype ? 'opacity-40 pointer-events-none' : ''}`}>
               <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Upload File</h2>
               {needsSubtype && (
-                <p className="text-xs text-amber-600">Please select an invoice type above first.</p>
+                <p className="text-xs text-amber-600 dark:text-amber-400">Please select an invoice type above first.</p>
               )}
               <FileDropzone
                 file={state.file}
@@ -519,7 +519,7 @@ export default function UploadPage() {
         {/* ── Service PO / Freight Invoice flow: validate → MIRO ───────── */}
         {(isServicePO || isFreightInv) && state.step === 'extracted' && state.editedData && (
           <div className="space-y-3">
-            <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs text-indigo-700 font-medium">
+            <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs text-indigo-700 font-medium dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-400">
               {isFreightInv
                 ? 'Freight Invoice — validates GR against SAP PO, then posts to MIRO (no MIGO step required)'
                 : 'Service PO — validates invoice details against SAP, then posts to MIRO (no MIGO required)'}
@@ -549,7 +549,7 @@ export default function UploadPage() {
         {/* ── Sales Order flow: Step 3 Customer Search + Simulate ─────────── */}
         {isSalesOrder && state.step === 'extracted' && state.editedData && (
           <div className="space-y-3">
-            <div className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs text-violet-700 font-medium">
+            <div className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs text-violet-700 font-medium dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-400">
               Sales Order (VA01) — search and confirm customer, review line items, then simulate via SAP
             </div>
             <SalesOrderForm
@@ -576,22 +576,22 @@ export default function UploadPage() {
           const isSuccess = (sim?.status === 'success') || String(sapResp?.STATUS ?? '').toUpperCase() === 'SUCCESS';
           const sapMessage = String(sapResp?.MESSAGE ?? sapResp?.message ?? '');
           return (
-            <div className={`rounded-xl border p-5 space-y-3 ${isSuccess ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+            <div className={`rounded-xl border p-5 space-y-3 ${isSuccess ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30' : 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30'}`}>
               <div className="flex items-center gap-2">
-                <div className={`h-8 w-8 rounded-full flex items-center justify-center ${isSuccess ? 'bg-green-100' : 'bg-red-100'}`}>
+                <div className={`h-8 w-8 rounded-full flex items-center justify-center ${isSuccess ? 'bg-green-100 dark:bg-green-900' : 'bg-red-100 dark:bg-red-900'}`}>
                   {isSuccess
-                    ? <svg className="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                    : <svg className="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    ? <svg className="h-4 w-4 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    : <svg className="h-4 w-4 text-red-500 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                   }
                 </div>
                 <div>
-                  <p className={`text-sm font-semibold ${isSuccess ? 'text-green-800' : 'text-red-700'}`}>
+                  <p className={`text-sm font-semibold ${isSuccess ? 'text-green-800 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
                     {isSuccess ? 'Simulation Successful' : 'Simulation Failed'}
                   </p>
-                  <p className={`text-xs mt-0.5 ${isSuccess ? 'text-green-600' : 'text-red-500'}`}>{sapMessage}</p>
+                  <p className={`text-xs mt-0.5 ${isSuccess ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>{sapMessage}</p>
                 </div>
               </div>
-              <div className={`rounded-lg bg-white border p-3 text-xs text-neutral-600 ${isSuccess ? 'border-green-100' : 'border-red-100'}`}>
+              <div className={`rounded-lg bg-white border p-3 text-xs text-neutral-600 dark:bg-neutral-900 dark:text-neutral-400 ${isSuccess ? 'border-green-100 dark:border-green-900' : 'border-red-100 dark:border-red-900'}`}>
                 <pre className="whitespace-pre-wrap break-all">{JSON.stringify(sapResp, null, 2)}</pre>
               </div>
               {isSuccess && (
@@ -642,35 +642,35 @@ export default function UploadPage() {
           const warnings = returnMsgs.filter(m => m.TYPE === 'W');
           const successes = returnMsgs.filter(m => m.TYPE === 'S');
           return (
-            <div className={`rounded-xl border p-5 space-y-4 ${isSuccess ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+            <div className={`rounded-xl border p-5 space-y-4 ${isSuccess ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30' : 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30'}`}>
               <div className="flex items-center gap-3">
-                <div className={`h-9 w-9 rounded-full flex items-center justify-center ${isSuccess ? 'bg-green-100' : 'bg-red-100'}`}>
+                <div className={`h-9 w-9 rounded-full flex items-center justify-center ${isSuccess ? 'bg-green-100 dark:bg-green-900' : 'bg-red-100 dark:bg-red-900'}`}>
                   {isSuccess
-                    ? <svg className="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                    : <svg className="h-5 w-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    ? <svg className="h-5 w-5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    : <svg className="h-5 w-5 text-red-500 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                   }
                 </div>
                 <div>
-                  <p className={`text-sm font-semibold ${isSuccess ? 'text-green-800' : 'text-red-700'}`}>
+                  <p className={`text-sm font-semibold ${isSuccess ? 'text-green-800 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
                     {isSuccess ? `Sales Order Created — ${soNumber}` : 'Sales Order Creation Failed'}
                   </p>
-                  {isSuccess && <p className="text-xs text-green-600 mt-0.5">Order number: <span className="font-bold">{soNumber}</span></p>}
+                  {isSuccess && <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">Order number: <span className="font-bold">{soNumber}</span></p>}
                 </div>
               </div>
               {/* SAP RETURN messages */}
               <div className="space-y-1.5">
                 {successes.map((m, i) => (
-                  <div key={i} className="flex items-start gap-2 text-xs text-green-700 bg-green-100 rounded px-2.5 py-1.5">
+                  <div key={i} className="flex items-start gap-2 text-xs text-green-700 bg-green-100 rounded px-2.5 py-1.5 dark:text-green-400 dark:bg-green-950">
                     <span className="font-bold shrink-0">S</span><span>{m.MESSAGE}</span>
                   </div>
                 ))}
                 {warnings.map((m, i) => (
-                  <div key={i} className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded px-2.5 py-1.5">
+                  <div key={i} className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded px-2.5 py-1.5 dark:text-amber-400 dark:bg-amber-950">
                     <span className="font-bold shrink-0">W</span><span>{m.MESSAGE}</span>
                   </div>
                 ))}
                 {errors.map((m, i) => (
-                  <div key={i} className="flex items-start gap-2 text-xs text-red-700 bg-red-100 rounded px-2.5 py-1.5">
+                  <div key={i} className="flex items-start gap-2 text-xs text-red-700 bg-red-100 rounded px-2.5 py-1.5 dark:text-red-400 dark:bg-red-950">
                     <span className="font-bold shrink-0">E</span><span>{m.MESSAGE}</span>
                   </div>
                 ))}
@@ -705,14 +705,14 @@ export default function UploadPage() {
         {isNonPO && state.step === 'extracted' && (
           <>
             {doc?.fb60_posting?.status === 'failed' && doc.fb60_posting.message && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
                 <p className="font-semibold mb-1">SAP rejected the previous posting:</p>
                 <ul className="list-disc list-inside space-y-0.5">
                   {doc.fb60_posting.message.split(' | ').map((msg, i) => (
                     <li key={i}>{msg}</li>
                   ))}
                 </ul>
-                <p className="mt-2 text-xs text-red-500">Correct the fields below and try again.</p>
+                <p className="mt-2 text-xs text-red-500 dark:text-red-400">Correct the fields below and try again.</p>
               </div>
             )}
             <NonPOInvoiceForm
@@ -749,7 +749,7 @@ export default function UploadPage() {
         {isMigo && state.step === 'gr_posted' && doc?.grn_posting && (
           <div className="space-y-4">
             {/* GRN result table */}
-            <div className="rounded-xl border border-teal-200 overflow-hidden">
+            <div className="rounded-xl border border-teal-200 overflow-hidden dark:border-teal-800">
               <div className="flex items-center justify-between px-5 py-4 bg-teal-50 dark:bg-teal-950/40">
                 <div>
                   <p className="text-sm font-semibold text-teal-900 dark:text-teal-200">
@@ -782,11 +782,11 @@ export default function UploadPage() {
                     <tbody className="divide-y divide-teal-100 bg-white dark:divide-teal-900 dark:bg-neutral-900">
                       {((doc.grn_posting.payload_sent as Record<string, unknown>).po_items as { po_item: string; material: string; quantity: string }[]).map((item, idx) => (
                         <tr key={idx}>
-                          <td className="px-4 py-3 font-mono text-xs text-neutral-700">{item.po_item}</td>
-                          <td className="px-4 py-3 font-mono text-xs text-neutral-700">{item.material}</td>
-                          <td className="px-4 py-3 text-right font-medium text-neutral-800">{item.quantity}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-neutral-700 dark:text-neutral-300">{item.po_item}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-neutral-700 dark:text-neutral-300">{item.material}</td>
+                          <td className="px-4 py-3 text-right font-medium text-neutral-800 dark:text-neutral-200">{item.quantity}</td>
                           <td className="px-4 py-3 text-center">
-                            <span className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-medium text-teal-700">Posted</span>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-medium text-teal-700 dark:bg-teal-950 dark:text-teal-400">Posted</span>
                           </td>
                         </tr>
                       ))}
@@ -810,7 +810,7 @@ export default function UploadPage() {
 
         {/* ── Step 5a: Posting loading ───────────────────────────────────── */}
         {state.step === 'posting' && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-8">
+          <div className="rounded-xl border border-neutral-200 bg-white p-8 dark:border-neutral-700 dark:bg-neutral-800">
             <PostingLoading
               lineItemCount={state.editedData?.line_items?.length ?? 0}
               target={isNonPO ? 'FB60' : isMigo ? 'MIRO (via MIGO)' : isServicePO ? 'MIRO (Service PO)' : 'MIRO'}
@@ -820,7 +820,7 @@ export default function UploadPage() {
 
         {/* ── Step 5b: Complete ──────────────────────────────────────────── */}
         {state.step === 'complete' && (doc?.miro_posting || doc?.fb60_posting) && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-6">
+          <div className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-800">
             <SuccessPanel
               miro={doc.miro_posting}
               fb60={doc.fb60_posting}
@@ -838,7 +838,7 @@ export default function UploadPage() {
               onClick={() => {
                 if (window.confirm('Start over? Current progress will be lost.')) reset();
               }}
-              className="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-neutral-600 transition-colors"
+              className="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
             >
               <RotateCcw className="h-3.5 w-3.5" />
               Start over

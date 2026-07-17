@@ -120,13 +120,13 @@ export default function AdminPage() {
       <div className="rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
         <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4 dark:border-neutral-800">
           <h2 className="text-base font-semibold text-neutral-900 dark:text-white">All Companies</h2>
-          <span className="text-sm text-neutral-400">{companies.length} total</span>
+          <span className="text-sm text-neutral-400 dark:text-neutral-500">{companies.length} total</span>
         </div>
 
         {coLoading ? (
-          <div className="flex items-center justify-center py-16 text-neutral-400">Loading…</div>
+          <div className="flex items-center justify-center py-16 text-neutral-400 dark:text-neutral-500">Loading…</div>
         ) : companies.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-16 text-neutral-400">
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-neutral-400 dark:text-neutral-500">
             <Building2 className="h-10 w-10 opacity-30" />
             <p className="text-sm">No companies yet. Add your first one.</p>
           </div>
@@ -136,7 +136,7 @@ export default function AdminPage() {
               <thead>
                 <tr className="border-b border-neutral-100 dark:border-neutral-800">
                   {['Company', 'Status', 'Documents', 'Pages', 'Users', 'Billed (Total)', 'Last Activity', ''].map(h => (
-                    <th key={h} className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-400">{h}</th>
+                    <th key={h} className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -154,7 +154,7 @@ export default function AdminPage() {
                         </div>
                         <div>
                           <p className="font-medium text-neutral-900 dark:text-white">{c.name}</p>
-                          <p className="text-xs text-neutral-400">{c.slug}</p>
+                          <p className="text-xs text-neutral-400 dark:text-neutral-500">{c.slug}</p>
                         </div>
                       </div>
                     </td>
@@ -163,7 +163,7 @@ export default function AdminPage() {
                     <td className="px-6 py-4 tabular-nums text-neutral-600 dark:text-neutral-400">{fmt(c.page_count)}</td>
                     <td className="px-6 py-4 tabular-nums text-neutral-600 dark:text-neutral-400">{c.user_count}</td>
                     <td className="px-6 py-4 tabular-nums font-medium text-emerald-700 dark:text-emerald-400">{fmtCurrency(c.total_billed)}</td>
-                    <td className="px-6 py-4 text-neutral-400 text-xs">{timeAgo(c.last_activity)}</td>
+                    <td className="px-6 py-4 text-neutral-400 dark:text-neutral-500 text-xs">{timeAgo(c.last_activity)}</td>
                     <td className="px-6 py-4">
                       <ChevronRight className="h-4 w-4 text-neutral-300 dark:text-neutral-600" />
                     </td>

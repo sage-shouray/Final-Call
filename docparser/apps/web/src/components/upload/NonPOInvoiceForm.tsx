@@ -53,7 +53,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
 }
 
 const inputCls = (error?: boolean) => cn(
-  'h-9 w-full rounded-lg border px-3 text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary-200 transition-colors',
+  'h-9 w-full rounded-lg border px-3 text-sm text-neutral-800 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary-200 transition-colors',
   'dark:text-neutral-100 dark:placeholder:text-neutral-600',
   error
     ? 'border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-950/40'
@@ -180,7 +180,7 @@ export function NonPOInvoiceForm({ extracted, isPosting, onPost }: Props) {
         <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3.5 dark:border-neutral-700">
           <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Invoice Line Items</h3>
           <button type="button" onClick={addItem}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-100 transition-colors">
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-100 transition-colors dark:bg-primary-950 dark:text-primary-400 dark:hover:bg-primary-900">
             <Plus className="h-3.5 w-3.5" /> Add Line
           </button>
         </div>
@@ -192,7 +192,7 @@ export function NonPOInvoiceForm({ extracted, isPosting, onPost }: Props) {
                 <span className="text-xs font-semibold text-neutral-500 dark:text-neutral-400">Line {item.line_no}</span>
                 {items.length > 1 && (
                   <button type="button" onClick={() => removeItem(idx)}
-                    className="text-red-400 hover:text-red-600 transition-colors">
+                    className="text-red-400 hover:text-red-600 transition-colors dark:text-red-500 dark:hover:text-red-400">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 )}
@@ -254,7 +254,7 @@ export function NonPOInvoiceForm({ extracted, isPosting, onPost }: Props) {
 
       {/* Validation error banner */}
       {hasErrors && (
-        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
           <AlertCircle className="h-4 w-4 shrink-0" />
           Please fill in all required fields (marked with *) before posting.
         </div>

@@ -46,7 +46,7 @@ export default function TeamPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900 dark:text-white">Team</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">{active.length} active · {inactive.length} inactive</p>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">{active.length} active · {inactive.length} inactive</p>
         </div>
         <button
           onClick={() => { setShowForm(s => !s); setFormError(''); }}
@@ -94,15 +94,15 @@ export default function TeamPage() {
       {/* Members table */}
       <div className="rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
         {isLoading ? (
-          <p className="text-center text-sm text-neutral-400 py-16">Loading…</p>
+          <p className="text-center text-sm text-neutral-400 dark:text-neutral-500 py-16">Loading…</p>
         ) : members.length === 0 ? (
-          <p className="text-center text-sm text-neutral-400 py-16">No team members yet. Add one above.</p>
+          <p className="text-center text-sm text-neutral-400 dark:text-neutral-500 py-16">No team members yet. Add one above.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-100 dark:border-neutral-800">
                 {['Name', 'Email', 'Role', 'Documents', 'Last Login', 'Status', ''].map(h => (
-                  <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-400">{h}</th>
+                  <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -110,14 +110,14 @@ export default function TeamPage() {
               {members.map(m => (
                 <tr key={m.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
                   <td className="px-5 py-3 font-medium text-neutral-900 dark:text-white">{m.name}</td>
-                  <td className="px-5 py-3 text-neutral-500">{m.email}</td>
+                  <td className="px-5 py-3 text-neutral-500 dark:text-neutral-400">{m.email}</td>
                   <td className="px-5 py-3">
                     <span className="rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium capitalize dark:bg-neutral-800 dark:text-neutral-300">
                       {m.role}
                     </span>
                   </td>
-                  <td className="px-5 py-3 tabular-nums text-neutral-500">{m.doc_count}</td>
-                  <td className="px-5 py-3 text-xs text-neutral-400">
+                  <td className="px-5 py-3 tabular-nums text-neutral-500 dark:text-neutral-400">{m.doc_count}</td>
+                  <td className="px-5 py-3 text-xs text-neutral-400 dark:text-neutral-500">
                     {m.last_login ? new Date(m.last_login).toLocaleString('en-IN') : 'Never'}
                   </td>
                   <td className="px-5 py-3">

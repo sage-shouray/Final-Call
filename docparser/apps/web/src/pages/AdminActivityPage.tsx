@@ -40,10 +40,10 @@ export default function AdminActivityPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900 dark:text-white">Activity Monitor</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">All documents across all companies · auto-refreshes every 30s</p>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">All documents across all companies · auto-refreshes every 30s</p>
         </div>
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400 pointer-events-none" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400 dark:text-neutral-500 pointer-events-none" />
           <input
             value={search}
             onChange={e => {
@@ -66,16 +66,16 @@ export default function AdminActivityPage() {
         </div>
 
         {isLoading ? (
-          <p className="text-center text-neutral-400 py-16 text-sm">Loading…</p>
+          <p className="text-center text-neutral-400 dark:text-neutral-500 py-16 text-sm">Loading…</p>
         ) : docs.length === 0 ? (
-          <p className="text-center text-neutral-400 py-16 text-sm">No documents found.</p>
+          <p className="text-center text-neutral-400 dark:text-neutral-500 py-16 text-sm">No documents found.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-100 dark:border-neutral-800">
                   {['Company', 'Document ID', 'Type', 'TCode', 'Pages', 'Status', 'Uploaded By', 'Date'].map(h => (
-                    <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-400">{h}</th>
+                    <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -83,17 +83,17 @@ export default function AdminActivityPage() {
                 {docs.map(d => (
                   <tr key={d.document_id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/30">
                     <td className="px-5 py-3 font-medium text-neutral-800 dark:text-white">{d.company_name}</td>
-                    <td className="px-5 py-3 font-mono text-xs text-neutral-500">{d.document_id}</td>
+                    <td className="px-5 py-3 font-mono text-xs text-neutral-500 dark:text-neutral-400">{d.document_id}</td>
                     <td className="px-5 py-3 capitalize text-neutral-600 dark:text-neutral-400">{d.type.replace('_', ' ')}</td>
                     <td className="px-5 py-3"><span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-mono dark:bg-neutral-800">{d.tcode}</span></td>
-                    <td className="px-5 py-3 tabular-nums text-neutral-500">{d.page_count || '—'}</td>
+                    <td className="px-5 py-3 tabular-nums text-neutral-500 dark:text-neutral-400">{d.page_count || '—'}</td>
                     <td className="px-5 py-3">
                       <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium capitalize', STATUS_COLOR[d.status] ?? STATUS_COLOR.uploaded)}>
                         {d.status}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-xs text-neutral-400">{d.uploaded_by}</td>
-                    <td className="px-5 py-3 text-xs text-neutral-400">{new Date(d.uploaded_at).toLocaleString('en-IN')}</td>
+                    <td className="px-5 py-3 text-xs text-neutral-400 dark:text-neutral-500">{d.uploaded_by}</td>
+                    <td className="px-5 py-3 text-xs text-neutral-400 dark:text-neutral-500">{new Date(d.uploaded_at).toLocaleString('en-IN')}</td>
                   </tr>
                 ))}
               </tbody>
