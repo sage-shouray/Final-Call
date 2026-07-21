@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { RouterProvider } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { Toaster } from 'react-hot-toast';
+import { Toaster, ToastBar, toast } from 'react-hot-toast';
+import { X } from 'lucide-react';
 import { router }      from './router';
 import { queryClient } from './lib/queryClient';
 import { useUIStore }  from './store/uiStore';
@@ -117,7 +118,31 @@ export default function App() {
             style: { background: '#eef2ff', color: '#3730a3', border: '1px solid #c7d2fe' },
           },
         }}
-      />
+      >
+        {(t) => (
+          <ToastBar toast={t}>
+            {({ icon, message }) => (
+              <>
+                {icon}
+                <div className="flex-1">{message}</div>
+                {/* Every toast — including the never-auto-dismissing error ones —
+                    gets an explicit close button so it can always be cleared
+                    without needing to reload the page. */}
+                {t.type !== 'loading' && (
+                  <button
+                    type="button"
+                    onClick={() => toast.dismiss(t.id)}
+                    aria-label="Dismiss notification"
+                    className="ml-1 shrink-0 rounded-md p-1 opacity-60 hover:opacity-100 hover:bg-black/5 transition-all"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </>
+            )}
+          </ToastBar>
+        )}
+      </Toaster>
     </QueryClientProvider>
   );
 }

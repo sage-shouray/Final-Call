@@ -26,7 +26,9 @@ export const useUIStore = create<UIState & UIActions>()(
   persist(
     (set) => ({
       // ── State ──────────────────────────────────────────────────────────────
-      sidebarCollapsed:    false,
+      // Resting state is the slim icon rail; hovering over it temporarily
+      // expands it (see Sidebar.tsx) without needing a manual toggle.
+      sidebarCollapsed:    true,
       activeNotifications: [],
 
       // ── Actions ────────────────────────────────────────────────────────────
@@ -58,6 +60,11 @@ export const useUIStore = create<UIState & UIActions>()(
       partialize: (state) => ({
         sidebarCollapsed: state.sidebarCollapsed,
       }),
+      // v1: sidebar now defaults to the collapsed icon rail (hover to expand)
+      // instead of always-expanded — force that new default onto any browser
+      // that already persisted the old `sidebarCollapsed: false`.
+      version: 1,
+      migrate: () => ({ sidebarCollapsed: true }),
     },
   ),
 );

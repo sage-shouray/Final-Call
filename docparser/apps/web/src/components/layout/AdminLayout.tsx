@@ -1,7 +1,7 @@
 import type React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, BarChart2, Activity, ArrowLeft, ShieldCheck, LogOut } from 'lucide-react';
-import uviraLogo from '@/assets/uvira-logo.png';
+import uviraLogo from '@/assets/uvira-logo-transparent.png';
 import { cn } from '@/lib/cn';
 import { logoutUser } from '@/store/authStore';
 
@@ -18,15 +18,19 @@ export function AdminLayout() {
     <div className="flex h-screen overflow-hidden bg-[#F3F4F8] dark:bg-neutral-950">
 
       {/* Sidebar */}
-      <aside className="w-56 shrink-0 flex flex-col border-r border-slate-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+      <aside className="w-56 shrink-0 flex flex-col bg-white shadow-[1px_0_0_0_rgba(15,23,42,0.06)] dark:bg-neutral-900 dark:shadow-[1px_0_0_0_rgba(255,255,255,0.06)]">
 
         {/* Logo + badge */}
-        <div className="flex h-[60px] items-center justify-between border-b border-slate-100 dark:border-neutral-800 px-4">
+        <div className="flex h-[60px] items-center justify-between px-4">
           <img src={uviraLogo} alt="Uvira.ai" className="h-7 w-auto max-w-[120px] object-contain" />
           <span className="flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700 uppercase tracking-wide dark:bg-violet-950 dark:text-violet-300">
             <ShieldCheck className="h-3 w-3" />
             Admin
           </span>
+        </div>
+
+        <div className="px-3">
+          <div className="h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent dark:via-white/10" />
         </div>
 
         {/* Nav */}
@@ -38,10 +42,10 @@ export function AdminLayout() {
               to={item.to}
               end={item.end}
               className={({ isActive }) => cn(
-                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                'relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-violet-50 text-violet-700 shadow-[inset_2px_0_0_#7C3AED] dark:bg-violet-950/50 dark:text-violet-300'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100',
+                  ? 'bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-neutral-400 dark:hover:bg-white/[0.04] dark:hover:text-neutral-100',
               )}
             >
               <item.icon className="h-4 w-4 shrink-0" />
@@ -50,8 +54,12 @@ export function AdminLayout() {
           ))}
         </nav>
 
+        <div className="px-3">
+          <div className="h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent dark:via-white/10" />
+        </div>
+
         {/* Footer actions */}
-        <div className="border-t border-slate-100 dark:border-neutral-800 px-2 py-3 space-y-0.5">
+        <div className="px-2 py-3 space-y-0.5">
           <button
             onClick={() => navigate('/dashboard')}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100 transition-colors"

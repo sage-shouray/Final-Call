@@ -2,10 +2,10 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Upload, History, Clock,
   FileText, ClipboardList, FileCheck, Package, Truck,
-  Settings, BarChart2, ChevronLeft,
+  Settings, BarChart2, PanelLeftClose, PanelLeftOpen,
   ShieldCheck, LogOut, Users, IndianRupee,
 } from 'lucide-react';
-import uviraLogo from '@/assets/uvira-logo.png';
+import uviraLogo from '@/assets/uvira-logo-transparent.png';
 import { useUIStore } from '@/store/uiStore';
 import { useAuthStore, logoutUser } from '@/store/authStore';
 import { useDashboardMetrics } from '@/hooks/useDashboardMetrics';
@@ -21,14 +21,19 @@ interface NavItem {
 }
 interface NavSection { section: string; items: NavItem[]; }
 
-// Single easing curve + duration used everywhere in the sidebar so every
-// element (width, text fade, padding) animates in lockstep — that's what
-// keeps the collapse/expand feeling like one motion instead of a jumble.
-const T = 'duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]';
+// Kept short and simple — a snappy, single-property width transition is far
+// lighter than animating a dozen properties on every element at once.
+const T = 'duration-200 ease-out';
+
+// A soft fading hairline instead of a flat solid border — reads much less
+// harsh as a section separator than a plain `border-t`/`border-b`.
+function FadeLine() {
+  return (
+    <div className="h-px shrink-0 bg-gradient-to-r from-transparent via-slate-200 to-transparent dark:via-white/10" />
+  );
+}
 
 // ─── Label — the part of a row that fades/collapses away, never unmounts ──────
-// Keeping it mounted (vs. conditionally rendering) is what makes the text
-// fade smoothly in sync with the sidebar width instead of popping in/out.
 function Label({ collapsed, className, children }: { collapsed: boolean; className?: string; children: React.ReactNode }) {
   return (
     <span
@@ -52,19 +57,22 @@ function SidebarLink({ item, collapsed }: { item: NavItem; collapsed: boolean })
       onClick={(e) => { if (item.comingSoon) e.preventDefault(); }}
       className={({ isActive }) =>
         cn(
-          'group flex items-center rounded-lg py-2 text-sm font-medium transition-all',
-          T,
-          collapsed ? 'justify-center px-0' : 'px-3',
+          'group flex items-center rounded-lg text-sm transition-colors',
+          collapsed ? 'h-9 w-9 justify-center' : 'px-2.5 py-2',
           item.comingSoon
             ? 'cursor-not-allowed opacity-40'
             : isActive
-              ? 'bg-indigo-50 text-indigo-700 shadow-[inset_2px_0_0_#4F46E5] -ml-px pl-[calc(0.75rem+1px)] dark:bg-indigo-950/50 dark:text-indigo-300'
-              : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100',
+              ? 'bg-indigo-50 text-indigo-600 font-medium dark:bg-indigo-500/10 dark:text-indigo-400'
+              : 'font-normal text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-neutral-400 dark:hover:bg-white/[0.04] dark:hover:text-neutral-200',
         )
       }
       aria-disabled={item.comingSoon}
     >
-      <item.icon className={cn('shrink-0 text-current transition-all', T, collapsed ? 'h-5 w-5' : 'h-4 w-4')} aria-hidden />
+      {/* Fixed-size icon slot — identical box in both states keeps every icon
+          on the same vertical column instead of jumping between sizes. */}
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+        <item.icon className="h-[18px] w-[18px] text-current" strokeWidth={1.75} aria-hidden />
+      </span>
       <Label collapsed={collapsed} className="flex flex-1 items-center gap-2">
         <span className="flex-1 truncate">{item.label}</span>
         {item.comingSoon && (
@@ -73,7 +81,7 @@ function SidebarLink({ item, collapsed }: { item: NavItem; collapsed: boolean })
           </span>
         )}
         {item.count != null && !item.comingSoon && item.count > 0 && (
-          <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300 tabular-nums">
+          <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300 tabular-nums">
             {item.count > 99 ? '99+' : item.count}
           </span>
         )}
@@ -95,12 +103,12 @@ function SidebarLink({ item, collapsed }: { item: NavItem; collapsed: boolean })
 function Avatar({ name, role }: { name: string; role: string }) {
   const initials = name.split(' ').slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('');
   const colors: Record<string, string> = {
-    admin:    'bg-violet-100 text-violet-700',
-    manager:  'bg-indigo-100 text-indigo-700',
-    operator: 'bg-sky-100 text-sky-700',
+    admin:    'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300',
+    manager:  'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300',
+    operator: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
   };
   return (
-    <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold select-none', colors[role] ?? 'bg-slate-100 text-slate-600 dark:bg-neutral-800 dark:text-neutral-400')}>
+    <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold select-none ring-1 ring-black/5 dark:ring-white/10', colors[role] ?? 'bg-slate-100 text-slate-600 dark:bg-neutral-800 dark:text-neutral-400')}>
       {initials}
     </span>
   );
@@ -113,6 +121,7 @@ export function Sidebar() {
   const navigate = useNavigate();
   const { data: metrics } = useDashboardMetrics();
 
+  const collapsed = sidebarCollapsed;
   const role      = user?.role ?? 'operator';
   const isManager = role === 'manager' || role === 'admin';
   const isManagerOnly = role === 'manager'; // admin uses the Admin Panel's own billing view
@@ -151,42 +160,75 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'relative flex h-screen flex-col overflow-hidden bg-white border-r border-slate-200 transition-[width] will-change-[width] dark:bg-neutral-900 dark:border-neutral-800',
+        'relative flex h-screen shrink-0 flex-col overflow-hidden bg-white shadow-[1px_0_0_0_rgba(15,23,42,0.06)] transition-[width] will-change-[width] dark:bg-neutral-900 dark:shadow-[1px_0_0_0_rgba(255,255,255,0.06)]',
         T,
-        sidebarCollapsed ? 'w-[60px]' : 'w-[220px]',
+        collapsed ? 'w-[64px]' : 'w-[224px]',
       )}
     >
-      {/* ── Logo ─────────────────────────────────────────────────────────── */}
-      <div
-        className="flex h-[60px] shrink-0 items-center border-b border-slate-100 cursor-pointer dark:border-neutral-800 px-4"
-        onClick={() => navigate('/dashboard')}
-      >
-        {/* Crossfade between the mark and full logo instead of an abrupt swap */}
-        <div className="relative flex h-9 w-9 shrink-0 items-center justify-center">
-          <div className={cn('absolute inset-0 flex items-center justify-center rounded-xl bg-indigo-600 shadow-sm transition-opacity', T, sidebarCollapsed ? 'opacity-100' : 'opacity-0')}>
-            <span className="text-white text-base font-black tracking-tighter leading-none">U</span>
-          </div>
+      {/* ── Logo + open/close toggle ─────────────────────────────────────── */}
+      <div className={cn('flex h-[60px] shrink-0 items-center', collapsed ? 'justify-center px-0' : 'justify-between px-3')}>
+        <div
+          className="flex items-center cursor-pointer overflow-hidden"
+          onClick={() => navigate('/dashboard')}
+        >
+          {collapsed ? (
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 shadow-sm">
+              <span className="text-white text-base font-black tracking-tighter leading-none">U</span>
+            </div>
+          ) : (
+            <img src={uviraLogo} alt="Uvira.ai" className="h-7 w-auto max-w-[140px] object-contain ml-1" />
+          )}
         </div>
-        <div className={cn('overflow-hidden transition-all', T, sidebarCollapsed ? 'ml-0 max-w-0 opacity-0' : '-ml-9 max-w-[150px] opacity-100')}>
-          <img src={uviraLogo} alt="Uvira.ai" className="h-8 w-auto max-w-[150px] object-contain" />
+
+        {!collapsed && (
+          <Tooltip content="Collapse sidebar" side="bottom">
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              aria-label="Collapse sidebar"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:text-neutral-500 dark:hover:bg-white/[0.06] dark:hover:text-neutral-300 transition-colors"
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </button>
+          </Tooltip>
+        )}
+      </div>
+
+      {collapsed && (
+        <div className="flex justify-center pb-2">
+          <Tooltip content="Expand sidebar" side="right">
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              aria-label="Expand sidebar"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:text-neutral-500 dark:hover:bg-white/[0.06] dark:hover:text-neutral-300 transition-colors"
+            >
+              <PanelLeftOpen className="h-4 w-4" />
+            </button>
+          </Tooltip>
         </div>
+      )}
+
+      <div className="px-3">
+        <FadeLine />
       </div>
 
       {/* ── Navigation ───────────────────────────────────────────────────── */}
-      <nav className="flex-1 overflow-y-auto overflow-x-hidden py-4 space-y-5 pl-3 pr-2">
+      <nav className={cn('flex-1 overflow-y-auto overflow-x-hidden py-4 space-y-6', collapsed ? 'px-2' : 'pl-3 pr-2')}>
         {sections.map(({ section, items }) => (
           <div key={section}>
-            <p className={cn(
-              'mb-1.5 overflow-hidden whitespace-nowrap px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 transition-all dark:text-neutral-500',
-              T,
-              sidebarCollapsed ? 'max-h-0 opacity-0' : 'max-h-4 opacity-100',
-            )}>
-              {section}
-            </p>
+            {!collapsed && (
+              <div className="mb-2 flex items-center gap-1.5 px-2">
+                <span className="h-1 w-1 shrink-0 rounded-full bg-indigo-300 dark:bg-indigo-600" />
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:text-neutral-500">
+                  {section}
+                </p>
+              </div>
+            )}
             <ul className="space-y-0.5">
               {items.map((item) => (
-                <li key={item.to}>
-                  <SidebarLink item={item} collapsed={sidebarCollapsed} />
+                <li key={item.to} className={collapsed ? 'flex justify-center' : undefined}>
+                  <SidebarLink item={item} collapsed={collapsed} />
                 </li>
               ))}
             </ul>
@@ -196,34 +238,40 @@ export function Sidebar() {
 
       {/* ── Admin Panel ──────────────────────────────────────────────────── */}
       {user?.role === 'admin' && (
-        <div className={cn('shrink-0 border-t border-slate-100 dark:border-neutral-800 px-2 py-2', sidebarCollapsed && 'flex justify-center')}>
-          {sidebarCollapsed ? (
-            <Tooltip content="Admin Panel" side="right">
+        <>
+          <div className="px-3"><FadeLine /></div>
+          <div className={cn('shrink-0 px-2 py-2', collapsed && 'flex justify-center')}>
+            {collapsed ? (
+              <Tooltip content="Admin Panel" side="right">
+                <button
+                  onClick={() => navigate('/admin')}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-violet-600 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-500/10 transition-colors"
+                >
+                  <ShieldCheck className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                </button>
+              </Tooltip>
+            ) : (
               <button
                 onClick={() => navigate('/admin')}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-violet-600 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-950/40 transition-colors"
+                className="flex w-full items-center px-2.5 py-2 rounded-lg text-sm text-violet-600 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-500/10 transition-colors"
               >
-                <ShieldCheck className="h-5 w-5" />
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                  <ShieldCheck className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                </span>
+                <Label collapsed={false}>Admin Panel</Label>
               </button>
-            </Tooltip>
-          ) : (
-            <button
-              onClick={() => navigate('/admin')}
-              className="flex w-full items-center px-3 py-2 rounded-lg text-sm font-medium text-violet-700 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-950/40 transition-colors"
-            >
-              <ShieldCheck className="h-4 w-4 shrink-0" />
-              <Label collapsed={false}>Admin Panel</Label>
-            </button>
-          )}
-        </div>
+            )}
+          </div>
+        </>
       )}
 
       {/* ── User profile + logout ─────────────────────────────────────────── */}
+      <div className="px-3"><FadeLine /></div>
       <div className={cn(
-        'shrink-0 border-t border-slate-100 dark:border-neutral-800 px-2 py-3',
-        sidebarCollapsed ? 'flex flex-col items-center gap-2' : 'space-y-1',
+        'shrink-0 px-2 py-3',
+        collapsed ? 'flex flex-col items-center gap-2' : 'space-y-1',
       )}>
-        {sidebarCollapsed ? (
+        {collapsed ? (
           <>
             <Tooltip content={`${user?.name ?? 'User'} · ${user?.role ?? ''}`} side="right">
               <span className="cursor-default">
@@ -233,15 +281,15 @@ export function Sidebar() {
             <Tooltip content="Logout" side="right">
               <button
                 onClick={() => logoutUser().then(() => navigate('/login'))}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 dark:text-neutral-500 dark:hover:bg-red-950/40 dark:hover:text-red-400 transition-colors"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 dark:text-neutral-500 dark:hover:bg-red-500/10 dark:hover:text-red-400 transition-colors"
               >
-                <LogOut className="h-4 w-4" />
+                <LogOut className="h-[18px] w-[18px]" strokeWidth={1.75} />
               </button>
             </Tooltip>
           </>
         ) : (
           <>
-            <div className="flex items-center gap-2.5 rounded-lg px-2 py-2 bg-slate-50 dark:bg-neutral-800">
+            <div className="flex items-center gap-2.5 rounded-lg px-2 py-2 bg-slate-50 dark:bg-white/[0.03]">
               <Avatar name={user?.name ?? 'U'} role={role} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-slate-800 dark:text-neutral-100">{user?.name ?? '—'}</p>
@@ -250,27 +298,16 @@ export function Sidebar() {
             </div>
             <button
               onClick={() => logoutUser().then(() => navigate('/login'))}
-              className="flex w-full items-center px-3 py-2 rounded-lg text-sm font-medium text-slate-500 hover:bg-red-50 hover:text-red-600 dark:text-neutral-400 dark:hover:bg-red-950/40 dark:hover:text-red-400 transition-colors"
+              className="flex w-full items-center px-2.5 py-2 rounded-lg text-sm text-slate-500 hover:bg-red-50 hover:text-red-600 dark:text-neutral-400 dark:hover:bg-red-500/10 dark:hover:text-red-400 transition-colors"
             >
-              <LogOut className="h-4 w-4 shrink-0" />
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                <LogOut className="h-[18px] w-[18px]" strokeWidth={1.75} />
+              </span>
               <Label collapsed={false}>Logout</Label>
             </button>
           </>
         )}
       </div>
-
-      {/* ── Collapse toggle ───────────────────────────────────────────────── */}
-      <button
-        type="button"
-        onClick={toggleSidebar}
-        aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        className={cn(
-          'absolute -right-3 top-[68px] flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm text-slate-400 hover:text-slate-600 hover:border-slate-300 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-500 dark:hover:text-neutral-300 dark:hover:border-neutral-600 transition-all z-10',
-          T,
-        )}
-      >
-        <ChevronLeft className={cn('h-3 w-3 transition-transform', T, sidebarCollapsed && 'rotate-180')} />
-      </button>
     </aside>
   );
 }
