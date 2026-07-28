@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { FileText, ClipboardList, FileCheck, Package, Truck } from 'lucide-react';
+import { FileText, ClipboardList, FileCheck, Package, Truck, Receipt } from 'lucide-react';
 import { DocumentType, TCode } from '@/types';
 import { cn } from '@/lib/cn';
 
@@ -18,6 +18,7 @@ const OPTIONS: DocTypeOption[] = [
   { type: DocumentType.PAYMENT_ADVICE,  label: 'Payment Advice',  tcode: TCode.F28,  icon: FileCheck, active: true  },
   { type: DocumentType.GOODS_RECEIPT,   label: 'Goods Receipt',   tcode: TCode.MIGO, icon: Package,   active: true  },
   { type: DocumentType.FREIGHT_INVOICE, label: 'Freight Invoice', tcode: TCode.MIRO, icon: Truck,     active: true  },
+  { type: DocumentType.CREDIT_NOTE,     label: 'Credit Note',     tcode: TCode.CREDIT, icon: Receipt, active: true, tcodeLabel: 'Credit Memo / Sub. Credit' },
 ];
 
 interface DocTypePickerProps {
@@ -50,7 +51,7 @@ export function DocTypePicker({ value, onChange }: DocTypePickerProps) {
   }, [value]);
 
   return (
-    <div ref={listRef} className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    <div ref={listRef} className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       {OPTIONS.map((opt) => {
         const selected = value === opt.type;
         const Icon     = opt.icon;

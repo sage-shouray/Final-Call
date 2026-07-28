@@ -13,6 +13,7 @@ from src.middleware.auth import CurrentUser, require_role
 from src.models.document import TCODE_MAP, DocumentStatus, DocumentType, InvoiceSubtype
 from src.repositories.document_repository import DocumentRepository
 from src.schemas.documents import (
+    CreditComparisonResponse,
     DocumentListItem,
     DocumentListResponse,
     DocumentResponse,
@@ -26,6 +27,7 @@ from src.schemas.documents import (
     ValidationResultResponse,
     ValidationTriggerResponse,
 )
+from src.schemas.sap import MIRODetailResponse
 from src.services.storage_service import (
     build_s3_key,
     get_presigned_url,
@@ -426,6 +428,70 @@ async def get_validation_result(document_id: str, current_user: CurrentUser) -> 
 
 
 # ---------------------------------------------------------------------------
+# GET /api/documents/{document_id}/miro-check
+#
+# Credit-note workflow, step 1: given the PO number extracted from the
+# uploaded credit-note invoice, check whether a MIRO has already been posted
+# against that PO. If so, SAP also returns the originally posted line items
+# (quantity, price, tax, totals) so the caller can diff them against what was
+# extracted from the credit-note invoice.
+# ---------------------------------------------------------------------------
+
+@router.get("/{document_id}/miro-check", response_model=MIRODetailResponse)
+async def check_miro_status(document_id: str, current_user: CurrentUser) -> MIRODetailResponse:
+    async with AsyncSessionLocal() as session:
+        doc = await DocumentRepository(session).find_by_document_id(document_id)
+
+    if not doc:
+        raise NotFoundError(f"Document '{document_id}' not found", error_code="DOCUMENT_NOT_FOUND")
+    _assert_tenant(doc, current_user)
+
+    po_number = (doc.get("extracted") or {}).get("po_number") or ""
+    if not po_number:
+        raise ValidationError(
+            "Document has no extracted PO number to check", error_code="PO_NUMBER_MISSING"
+        )
+
+    from src.services.sap_service import get_sap_service
+    return await get_sap_service().fetch_miro_details(po_number)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/documents/{document_id}/credit-compare
+#
+# Credit-note workflow, step 2: fetches the MIRO details for the extracted
+# PO (same as miro-check) and diffs them line-by-line against the extracted
+# credit-note invoice, returning per-line differences plus the system's
+# Credit Memo / Subsequent Credit classification. Posting is a separate
+# endpoint, added once the posting BAPI is confirmed.
+# ---------------------------------------------------------------------------
+
+@router.get("/{document_id}/credit-compare", response_model=CreditComparisonResponse)
+async def compare_credit_note_document(
+    document_id: str, current_user: CurrentUser
+) -> CreditComparisonResponse:
+    async with AsyncSessionLocal() as session:
+        doc = await DocumentRepository(session).find_by_document_id(document_id)
+
+    if not doc:
+        raise NotFoundError(f"Document '{document_id}' not found", error_code="DOCUMENT_NOT_FOUND")
+    _assert_tenant(doc, current_user)
+
+    extracted = doc.get("extracted") or {}
+    po_number = extracted.get("po_number") or ""
+    if not po_number:
+        raise ValidationError(
+            "Document has no extracted PO number to check", error_code="PO_NUMBER_MISSING"
+        )
+
+    from src.services.credit_service import compare_credit_note
+    from src.services.sap_service import get_sap_service
+
+    miro = await get_sap_service().fetch_miro_details(po_number)
+    return compare_credit_note(document_id, extracted, miro)
+
+
+# ---------------------------------------------------------------------------
 # POST /api/documents/{document_id}/post-miro
 # ---------------------------------------------------------------------------
 
@@ -594,7 +660,9 @@ async def so_create(document_id: str, body: dict, current_user: CurrentUser):
 # ---------------------------------------------------------------------------
 
 @router.post("/{document_id}/f26-simulate", response_model=F26SimulateTriggerResponse, status_code=202)
-async def f26_simulate(document_id: str, current_user: CurrentUser) -> F26SimulateTriggerResponse:
+async def f26_simulate(
+    document_id: str, form_data: dict, current_user: CurrentUser
+) -> F26SimulateTriggerResponse:
     """Simulate F-26 customer payment (indicator='X'). Saves result; posting allowed after success."""
     async with AsyncSessionLocal() as session:
         doc = await DocumentRepository(session).find_by_document_id(document_id)
@@ -612,7 +680,9 @@ async def f26_simulate(document_id: str, current_user: CurrentUser) -> F26Simula
 
     import asyncio as _asyncio
     from src.workers.f26_worker import run_f26_simulate
-    _asyncio.create_task(run_f26_simulate(document_id, current_user.sub), name=f"f26-simulate-{document_id}")
+    _asyncio.create_task(
+        run_f26_simulate(document_id, current_user.sub, form_data), name=f"f26-simulate-{document_id}"
+    )
 
     return F26SimulateTriggerResponse(
         document_id=document_id, status="simulating", message="F-26 simulation started."

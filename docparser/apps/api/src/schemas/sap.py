@@ -397,3 +397,34 @@ class F26Response(BaseModel):
     success:         bool = False
     is_simulation:   bool = True
     sap_response:    dict[str, Any] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Credit Memo — zmiro_details/MIRO_DETAILS (checks whether MIRO is already
+# posted against a PO, and if so returns the originally posted line items so
+# the extracted credit-note invoice can be diffed against them)
+# ---------------------------------------------------------------------------
+
+
+class MIRODetailItem(BaseModel):
+    PO_NUMBER:        str   = ""
+    PO_ITEM:          int   = 0
+    INVOICE_DOCUMENT: str   = ""
+    FISCAL_YEAR:      int   = 0
+    POSTING_DATE:     int   = 0
+    QUANTITY:         float = 0.0
+    PRICE_PER_UNIT:   float = 0.0
+    NET_AMOUNT:       float = 0.0
+    TAX_AMOUNT:       float = 0.0
+    TOTAL_AMOUNT:     float = 0.0
+
+
+class MIRODetailResponse(BaseModel):
+    STATUS:  str = ""
+    MESSAGE: str = ""
+    DATA:    list[MIRODetailItem] = Field(default_factory=list)
+
+    @property
+    def miro_posted(self) -> bool:
+        """True if at least one MIRO document already exists for this PO."""
+        return self.STATUS.strip().lower() == "success" and len(self.DATA) > 0

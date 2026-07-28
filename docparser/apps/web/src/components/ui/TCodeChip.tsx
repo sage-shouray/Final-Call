@@ -7,6 +7,7 @@ const tCodeColors: Record<TCode, string> = {
   [TCode.VA01]: 'bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-950 dark:text-violet-400 dark:ring-violet-800',
   [TCode.F28]:  'bg-sky-50    text-sky-700    ring-sky-200 dark:bg-sky-950 dark:text-sky-400 dark:ring-sky-800',
   [TCode.MIGO]: 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:ring-emerald-800',
+  [TCode.CREDIT]: 'bg-rose-50   text-rose-700   ring-rose-200 dark:bg-rose-950 dark:text-rose-400 dark:ring-rose-800',
 };
 
 interface TCodeChipProps {

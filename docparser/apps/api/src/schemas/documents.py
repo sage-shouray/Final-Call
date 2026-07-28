@@ -90,6 +90,39 @@ class F26PostTriggerResponse(BaseModel):
     document_number: str = ""
 
 
+# ---------------------------------------------------------------------------
+# Credit-note comparison — extracted invoice line items vs. originally
+# posted MIRO line items
+# ---------------------------------------------------------------------------
+
+
+class CreditLineDiff(BaseModel):
+    line_number:       str = ""
+    po_item:            str = ""
+    material_code:      str = ""
+    extracted_quantity: float = 0.0
+    miro_quantity:      float = 0.0
+    quantity_changed:   bool = False
+    extracted_price:    float = 0.0
+    miro_price:         float = 0.0
+    price_changed:      bool = False
+    extracted_amount:   float = 0.0
+    miro_amount:        float = 0.0
+    extracted_tax:      float = 0.0
+    miro_tax:           float = 0.0
+    matched:            bool = False  # False if no corresponding MIRO line was found
+
+
+class CreditComparisonResponse(BaseModel):
+    document_id:   str = ""
+    po_number:     str = ""
+    miro_posted:   bool = False
+    miro_message:  str = ""
+    credit_case:   str | None = None   # "credit_memo" | "subsequent_credit" | None
+    reason:        str = ""
+    line_diffs:    list[CreditLineDiff] = Field(default_factory=list)
+
+
 class DocumentResponse(BaseModel):
     """Serialised document returned to the frontend."""
 

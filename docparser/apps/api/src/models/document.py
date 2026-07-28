@@ -24,14 +24,28 @@ class DocumentType(StrEnum):
     PAYMENT_ADVICE  = "payment_advice"
     GOODS_RECEIPT   = "goods_receipt"
     FREIGHT_INVOICE = "freight_invoice"
+    CREDIT_NOTE     = "credit_note"
 
 
 class TCode(StrEnum):
-    MIRO = "MIRO"
-    FB60 = "FB60"
-    VA01 = "VA01"
-    F28  = "F-28"
-    MIGO = "MIGO"
+    MIRO   = "MIRO"
+    FB60   = "FB60"
+    VA01   = "VA01"
+    F28    = "F-28"
+    MIGO   = "MIGO"
+    CREDIT = "CREDIT"  # placeholder label for credit-note documents until the
+                        # actual posting T-code (MR8M vs. subsequent credit) is
+                        # decided per-document by the comparison outcome
+
+
+class CreditCase(StrEnum):
+    """How a credit-note invoice compares against the original posted MIRO.
+
+    CREDIT_MEMO       — quantity (and/or price) differs from the original MIRO line.
+    SUBSEQUENT_CREDIT — only the price differs; material and quantity are unchanged.
+    """
+    CREDIT_MEMO       = "credit_memo"
+    SUBSEQUENT_CREDIT = "subsequent_credit"
 
 
 class DocumentStatus(StrEnum):
@@ -78,6 +92,7 @@ TCODE_MAP: dict[DocumentType, TCode] = {
     DocumentType.PAYMENT_ADVICE:  TCode.F28,
     DocumentType.GOODS_RECEIPT:   TCode.MIGO,
     DocumentType.FREIGHT_INVOICE: TCode.MIRO,
+    DocumentType.CREDIT_NOTE:     TCode.CREDIT,
 }
 
 

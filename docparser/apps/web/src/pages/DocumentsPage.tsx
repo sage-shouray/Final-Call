@@ -199,6 +199,8 @@ const STATUS_LABELS: Record<DocumentStatus, string> = {
   [DocumentStatus.VALIDATED]:  'Validated',
   [DocumentStatus.GR_POSTING]: 'GR Posting',
   [DocumentStatus.GR_POSTED]:  'GR Posted',
+  [DocumentStatus.SIMULATING]: 'Simulating',
+  [DocumentStatus.SIMULATED]:  'Simulated',
   [DocumentStatus.POSTING]:    'Posting',
   [DocumentStatus.POSTED]:     'Posted',
   [DocumentStatus.FAILED]:     'Failed',

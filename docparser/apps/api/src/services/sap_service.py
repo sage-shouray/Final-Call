@@ -6,8 +6,9 @@ shares the same open/closed/half-open state.  The Redis storage class uses a
 inherently sync, and the sub-millisecond key lookups are acceptable overhead.
 
 Endpoints (configured via settings):
-  fetch_po_details → POST {SAP_BASE_URL}/zpo_grn/Detail?sap-client={SAP_CLIENT}
-  post_miro        → POST {SAP_BASE_URL}/ZMIRO/MIRO?sap-client={SAP_CLIENT}
+  fetch_po_details    → POST {SAP_BASE_URL}/zpo_grn/Detail?sap-client={SAP_CLIENT}
+  post_miro           → POST {SAP_BASE_URL}/ZMIRO/MIRO?sap-client={SAP_CLIENT}
+  fetch_miro_details  → GET  {SAP_BASE_URL}/zmiro_details/MIRO_DETAILS?sap-client={SAP_CLIENT}&po_number={PO}
 """
 from __future__ import annotations
 
@@ -29,7 +30,7 @@ from src.config import settings
 from src.exceptions import SAPCircuitOpenError, SAPConnectionError
 from src.schemas.sap import (
     FB60Payload, FB60Response, GRNPayload, GRNResponse,
-    MIROPayload, MIROResponse, SAPPOResponse,
+    MIRODetailResponse, MIROPayload, MIROResponse, SAPPOResponse,
     SAPServicePOResponse, SAPServicePOLineItem, SAPServicePOGRNEntry,
     ServiceMIROPayload,
 )
@@ -299,6 +300,22 @@ class SAPService:
         url = self._sap_url("ZMIRO/MIRO")
         return await self._http_post(url, payload)
 
+    async def _fetch_miro_details_raw(self, po_number: str) -> dict[str, Any]:
+        """Retry-wrapped MIRO-status lookup — GET with po_number as a query param."""
+        url = self._sap_url("zmiro_details/MIRO_DETAILS")
+        po_clean = self._clean_po_number(po_number)
+        log.info("checking MIRO status from SAP", po_number=po_clean)
+        import httpx as _httpx
+        async for attempt in AsyncRetrying(
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            stop=stop_after_attempt(3),
+            retry=retry_if_exception_type(_httpx.TransportError),
+            reraise=True,
+        ):
+            with attempt:
+                return await self._http_get(url, {"po_number": po_clean})
+        raise SAPConnectionError("MIRO status fetch failed after all retries")  # unreachable
+
     async def _post_grn_raw(self, payload: dict[str, Any]) -> Any:
         """Single GRN POST — no retry to prevent duplicate GR creation in SAP.
 
@@ -394,6 +411,16 @@ class SAPService:
             PO_LINE_ITEMS=line_items,
             raw_response=raw,
         )
+
+    async def fetch_miro_details(self, po_number: str) -> MIRODetailResponse:
+        """Check whether a MIRO document already exists for this PO.
+
+        Returns STATUS/MESSAGE plus, when found, the originally posted line
+        items (quantity, price, tax, totals) so a credit-note invoice's
+        extracted line items can be diffed against what was actually posted.
+        """
+        raw = await self._fetch_miro_details_raw(po_number)
+        return MIRODetailResponse.model_validate(raw)
 
     async def post_grn(self, payload: GRNPayload) -> GRNResponse:
         """Post the GRN payload to SAP MIGO."""

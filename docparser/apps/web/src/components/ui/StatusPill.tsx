@@ -13,6 +13,8 @@ const statusConfig: Record<
   [DocumentStatus.VALIDATED]:  { label: 'Validated',   variant: 'success'  },
   [DocumentStatus.GR_POSTING]: { label: 'GR Posting',  variant: 'warning'  },
   [DocumentStatus.GR_POSTED]:  { label: 'GR Posted',   variant: 'success'  },
+  [DocumentStatus.SIMULATING]: { label: 'Simulating',  variant: 'warning'  },
+  [DocumentStatus.SIMULATED]:  { label: 'Simulated',   variant: 'success'  },
   [DocumentStatus.POSTING]:    { label: 'Posting',     variant: 'warning'  },
   [DocumentStatus.POSTED]:     { label: 'Posted',      variant: 'success'  },
   [DocumentStatus.FAILED]:     { label: 'Failed',     variant: 'error'    },

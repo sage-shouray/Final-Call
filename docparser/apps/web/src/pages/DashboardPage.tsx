@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  FileText, ClipboardList, FileCheck, Package, Truck,
+  FileText, ClipboardList, FileCheck, Package, Truck, Receipt,
   Upload, AlertCircle, ArrowRight,
 } from 'lucide-react';
 import { useDashboardMetrics } from '@/hooks/useDashboardMetrics';
@@ -415,12 +415,13 @@ export default function DashboardPage() {
         {/* ── Quick actions ─────────────────────────────────────────────────── */}
         <div>
           <h2 className="mb-3 text-sm font-semibold text-neutral-700 dark:text-neutral-300">Quick Actions</h2>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
             <QuickAction label="Vendor Invoice"  tcode="MIRO" icon={FileText}  active uploadType="vendor_invoice" />
             <QuickAction label="Sales Order"     tcode="VA01" icon={ClipboardList} active uploadType="sales_order" />
             <QuickAction label="Payment Advice"  tcode="F-28" icon={FileCheck} active uploadType="payment_advice" />
             <QuickAction label="Goods Receipt"   tcode="MIGO" icon={Package}   active uploadType="goods_receipt" />
             <QuickAction label="Freight Invoice" tcode="MIRO" icon={Truck}     active uploadType="freight_invoice" />
+            <QuickAction label="Credit Note"     tcode="CREDIT" icon={Receipt} active uploadType="credit_note" />
           </div>
         </div>
 

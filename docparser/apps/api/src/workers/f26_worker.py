@@ -9,27 +9,56 @@ import structlog
 log = structlog.get_logger(__name__)
 
 
-def _build_f26_payload(extracted: dict[str, Any], indicator: str) -> dict[str, Any]:
-    """Map OCR-extracted fields to F26 API payload."""
+def _to_dot_date(value: str) -> str:
+    """SAP's F-26 API expects DD.MM.YYYY. Extracted/typed dates commonly arrive
+    as DD-MM-YYYY or DD/MM/YYYY — normalise separators to dots; leave already-dotted
+    or malformed values untouched."""
+    value = (value or "").strip()
+    if not value:
+        return ""
+    return value.replace("/", ".").replace("-", ".")
+
+
+def _build_f26_payload(
+    extracted: dict[str, Any], indicator: str, form_data: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Map form fields (preferred) or OCR-extracted fields (fallback) to the F26 API payload."""
+    form = form_data or {}
+
+    def pick(*keys: str, default: str = "") -> str:
+        for key in keys:
+            val = form.get(key)
+            if val not in (None, ""):
+                return str(val)
+        for key in keys:
+            val = extracted.get(key)
+            if val not in (None, ""):
+                return str(val)
+        return default
+
+    invoice_date_fallback = extracted.get("invoice_date", "")
+
     return {
-        "company_code":  extracted.get("company_code", ""),
-        "customer":      extracted.get("customer", ""),
-        "invoice":       extracted.get("invoice_no", ""),
-        "fiscal_year":   extracted.get("fiscal_year", ""),
-        "document_date": extracted.get("document_date") or extracted.get("invoice_date", ""),
-        "posting_date":  extracted.get("posting_date") or extracted.get("invoice_date", ""),
-        "currency":      extracted.get("currency", "INR"),
-        "amount":        str(extracted.get("gross_amount") or extracted.get("amount", "")),
-        "bank_gl":       extracted.get("bank_gl", ""),
-        "value_date":    extracted.get("value_date") or extracted.get("invoice_date", ""),
-        "reference":     extracted.get("reference") or extracted.get("reference_doc", ""),
-        "header_text":   extracted.get("header_text", "Customer Payment"),
-        "item_text":     extracted.get("item_text", "Payment against Invoice"),
+        "company_code":  pick("company_code"),
+        "customer":      pick("customer"),
+        "invoice":       pick("invoice", "invoice_no"),
+        "fiscal_year":   pick("fiscal_year"),
+        "document_date": _to_dot_date(pick("document_date", default=invoice_date_fallback)),
+        "posting_date":  _to_dot_date(pick("posting_date", default=invoice_date_fallback)),
+        "currency":      pick("currency", default=extracted.get("currency", "INR")),
+        "amount":        pick("amount", "gross_amount"),
+        "bank_gl":       pick("bank_gl"),
+        "value_date":    _to_dot_date(pick("value_date", default=invoice_date_fallback)),
+        "reference":     pick("reference", "reference_doc", default=extracted.get("invoice_no", "")),
+        "header_text":   pick("header_text", default="Customer Payment"),
+        "item_text":     pick("item_text", default="Payment against Invoice"),
         "indicator":     indicator,
     }
 
 
-async def run_f26_simulate(document_id: str, posted_by: str = "system") -> None:
+async def run_f26_simulate(
+    document_id: str, posted_by: str = "system", form_data: dict[str, Any] | None = None
+) -> None:
     """Run F-26 simulation (indicator='X') and save result."""
     from src.database import AsyncSessionLocal
     from src.models.document import DocumentStatus
@@ -53,7 +82,7 @@ async def run_f26_simulate(document_id: str, posted_by: str = "system") -> None:
             await doc_repo.update_status(doc_id, DocumentStatus.SIMULATING)
             await session.commit()
 
-            payload_dict = _build_f26_payload(extracted, indicator="X")
+            payload_dict = _build_f26_payload(extracted, indicator="X", form_data=form_data)
             payload = F26Payload(**payload_dict)
 
             sap_service = get_sap_service()
@@ -121,8 +150,9 @@ async def run_f26_post(document_id: str, posted_by: str = "system") -> str:
             await doc_repo.update_status(doc_id, DocumentStatus.POSTING)
             await session.commit()
 
-            # Use the same payload as simulation but with indicator=""
-            payload_dict = _build_f26_payload(extracted, indicator="")
+            # Reuse the exact fields sent during simulation (indicator swapped to post)
+            sim_payload = sim.get("payload_sent") or {}
+            payload_dict = _build_f26_payload(extracted, indicator="", form_data=sim_payload)
             payload = F26Payload(**payload_dict)
 
             sap_service = get_sap_service()

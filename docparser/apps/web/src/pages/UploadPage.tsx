@@ -15,7 +15,9 @@ import { NonPOInvoiceForm }  from '@/components/upload/NonPOInvoiceForm';
 import { SalesOrderForm }    from '@/components/upload/SalesOrderForm';
 import { ValidationPanel, ValidationLoading } from '@/components/upload/ValidationPanel';
 import { SuccessPanel, PostingLoading }        from '@/components/upload/SuccessPanel';
-import { DocumentType, DocumentStatus, InvoiceSubtype, type ExtractedData, type FB60FormData } from '@/types';
+import { CreditComparisonPanel, CreditCompareLoading } from '@/components/upload/CreditComparisonPanel';
+import { PaymentAdviceForm } from '@/components/upload/PaymentAdviceForm';
+import { DocumentType, DocumentStatus, InvoiceSubtype, type ExtractedData, type FB60FormData, type CreditComparisonResult, type F26FormData } from '@/types';
 import type { Document } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -40,6 +42,7 @@ interface WizardState {
   parentInvoiceType: 'po' | 'non_po' | null;
   invoiceSubtype:   InvoiceSubtype | null;
   editedData:       ExtractedData | null;
+  creditComparison: CreditComparisonResult | null;
 }
 
 const INITIAL: WizardState = {
@@ -51,6 +54,7 @@ const INITIAL: WizardState = {
   parentInvoiceType: null,
   invoiceSubtype:    null,
   editedData:        null,
+  creditComparison:  null,
 };
 
 // ─── Step config ──────────────────────────────────────────────────────────────
@@ -123,7 +127,7 @@ function ExtractionSkeleton({ fileName, fileSize }: { fileName: string; fileSize
     <div className="rounded-xl border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
       <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3.5 dark:border-neutral-700">
         <div>
-          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Gemini AI · OCR Extraction</h3>
+          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">OCR Extraction</h3>
           <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">Usually takes 8–15 seconds</p>
         </div>
         <div className="text-right">
@@ -195,6 +199,9 @@ export default function UploadPage() {
     if (status === DocumentStatus.VALIDATED && state.step === 'validating') {
       fetchDocumentAndAdvance(state.documentId, 'validated');
     }
+    if (status === DocumentStatus.SIMULATED && state.step === 'validating') {
+      fetchDocumentAndAdvance(state.documentId, 'validated');
+    }
     if (status === DocumentStatus.POSTED && state.step === 'posting') {
       fetchDocumentAndAdvance(state.documentId, 'complete');
     }
@@ -242,6 +249,14 @@ export default function UploadPage() {
           setState((prev) => ({ ...prev, step: 'gr_posted', document: doc }));
         } else if (s === DocumentStatus.VALIDATED && state.step === 'validating') {
           clearInterval(pollRef.current);
+          setState((prev) => ({ ...prev, step: 'validated', document: doc }));
+        } else if (s === DocumentStatus.SIMULATED && state.step === 'validating') {
+          clearInterval(pollRef.current);
+          setState((prev) => ({ ...prev, step: 'validated', document: doc }));
+        } else if (s === DocumentStatus.SIMULATED && state.step === 'posting') {
+          // F-26 posting failed — worker reverted status back to SIMULATED
+          clearInterval(pollRef.current);
+          toast.error(doc.f26_posting?.message || 'SAP posting failed. Please retry.');
           setState((prev) => ({ ...prev, step: 'validated', document: doc }));
         } else if (s === DocumentStatus.POSTED && state.step === 'posting') {
           clearInterval(pollRef.current);
@@ -319,6 +334,22 @@ export default function UploadPage() {
     }
   }
 
+  // ── Credit Note: check MIRO + compare line items ───────────────────────────
+
+  async function handleCreditCompare() {
+    if (!state.documentId) return;
+    setState((s) => ({ ...s, step: 'validating' }));
+    try {
+      const resp = await api.get<CreditComparisonResult>(`/documents/${state.documentId}/credit-compare`);
+      setState((s) => ({ ...s, step: 'validated', creditComparison: resp.data }));
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        ?? 'Failed to check MIRO status. Please retry.';
+      toast.error(msg);
+      setState((s) => ({ ...s, step: 'extracted' }));
+    }
+  }
+
   // ── Post GRN (MIGO) ─────────────────────────────────────────────────────────
 
   async function handlePostGrn() {
@@ -370,6 +401,30 @@ export default function UploadPage() {
     }
   }
 
+  // ── Payment Advice: F-26 simulate + post ────────────────────────────────────
+
+  async function handleF26Simulate(formData: F26FormData) {
+    if (!state.documentId) return;
+    setState((s) => ({ ...s, step: 'validating' }));
+    try {
+      await api.post(`/documents/${state.documentId}/f26-simulate`, formData);
+    } catch {
+      toast.error('Failed to trigger F-26 simulation. Please retry.');
+      setState((s) => ({ ...s, step: 'extracted' }));
+    }
+  }
+
+  async function handleF26Post() {
+    if (!state.documentId) return;
+    setState((s) => ({ ...s, step: 'posting' }));
+    try {
+      await api.post(`/documents/${state.documentId}/f26-post`);
+    } catch {
+      toast.error('Failed to trigger F-26 posting. Please retry.');
+      setState((s) => ({ ...s, step: 'validated' }));
+    }
+  }
+
   // ── Reset ────────────────────────────────────────────────────────────────────
 
   function reset() {
@@ -387,6 +442,8 @@ export default function UploadPage() {
   const isVendorInv   = state.selectedType === DocumentType.VENDOR_INVOICE;
   const isFreightInv  = state.selectedType === DocumentType.FREIGHT_INVOICE;
   const isSalesOrder  = state.selectedType === DocumentType.SALES_ORDER;
+  const isCreditNote  = state.selectedType === DocumentType.CREDIT_NOTE;
+  const isPaymentAdvice = state.selectedType === DocumentType.PAYMENT_ADVICE;
   const isNonPO       = isVendorInv && state.invoiceSubtype === InvoiceSubtype.NON_PO;
   const isServicePO   = isVendorInv && state.invoiceSubtype === InvoiceSubtype.SERVICE_PO;
   const needsSubtype  = isVendorInv && state.invoiceSubtype === null;
@@ -680,7 +737,7 @@ export default function UploadPage() {
         })()}
 
         {/* ── Material PO flow: Step 3 Review / Step 4 Validate ──────────── */}
-        {!isMigo && !isNonPO && !isServicePO && !isFreightInv && !isSalesOrder && state.step === 'extracted' && state.editedData && (
+        {!isMigo && !isNonPO && !isServicePO && !isFreightInv && !isSalesOrder && !isCreditNote && !isPaymentAdvice && state.step === 'extracted' && state.editedData && (
           <ExtractedDataForm
             data={state.editedData}
             onDataChange={(updated) => setState((s) => ({ ...s, editedData: updated }))}
@@ -688,18 +745,127 @@ export default function UploadPage() {
             isValidating={false}
           />
         )}
-        {!isMigo && !isNonPO && !isServicePO && !isFreightInv && !isSalesOrder && state.step === 'validating' && (
+        {!isMigo && !isNonPO && !isServicePO && !isFreightInv && !isSalesOrder && !isCreditNote && !isPaymentAdvice && state.step === 'validating' && (
           <div className="rounded-xl border border-neutral-200 bg-white p-8 dark:border-neutral-700 dark:bg-neutral-900">
             <ValidationLoading />
           </div>
         )}
-        {!isMigo && !isNonPO && !isServicePO && !isFreightInv && !isSalesOrder && state.step === 'validated' && doc?.sap_validation && (
+        {!isMigo && !isNonPO && !isServicePO && !isFreightInv && !isSalesOrder && !isCreditNote && !isPaymentAdvice && state.step === 'validated' && doc?.sap_validation && (
           <ValidationPanel
             validation={doc.sap_validation}
             onPost={handlePostMiro}
             isPosting={false}
           />
         )}
+
+        {/* ── Credit Note flow: Step 3 Review → Step 4 MIRO check + compare ── */}
+        {isCreditNote && state.step === 'extracted' && state.editedData && (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs text-indigo-700 font-medium dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-400">
+              Credit Note — checks whether MIRO is already posted for this PO, then compares line items to determine Credit Memo vs. Subsequent Credit
+            </div>
+            <ExtractedDataForm
+              data={state.editedData}
+              onDataChange={(updated) => setState((s) => ({ ...s, editedData: updated }))}
+              onValidate={handleCreditCompare}
+              isValidating={false}
+              validateLabel="Check MIRO & Compare"
+            />
+          </div>
+        )}
+        {isCreditNote && state.step === 'validating' && (
+          <div className="rounded-xl border border-neutral-200 bg-white p-8 dark:border-neutral-700 dark:bg-neutral-900">
+            <CreditCompareLoading />
+          </div>
+        )}
+        {isCreditNote && state.step === 'validated' && state.creditComparison && (
+          <CreditComparisonPanel
+            comparison={state.creditComparison}
+            onPost={() => { /* posting wired up once the SAP posting API is confirmed */ }}
+            isPosting={false}
+          />
+        )}
+
+        {/* ── Payment Advice flow: Step 3 F-26 Form → Simulate → Post ────── */}
+        {isPaymentAdvice && state.step === 'extracted' && (
+          <PaymentAdviceForm
+            extracted={state.editedData}
+            isSimulating={false}
+            onSimulate={handleF26Simulate}
+          />
+        )}
+        {isPaymentAdvice && state.step === 'validating' && (
+          <div className="rounded-xl border border-neutral-200 bg-white p-8 dark:border-neutral-700 dark:bg-neutral-900">
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="h-10 w-10 rounded-full bg-violet-100 flex items-center justify-center dark:bg-violet-900/40">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
+              </div>
+              <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Simulating F-26 Customer Payment…</p>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500">Sending to SAP ZINV_PAY/INV_PAYMENT</p>
+            </div>
+          </div>
+        )}
+        {isPaymentAdvice && state.step === 'validated' && doc?.f26_simulation && (() => {
+          const sim = doc.f26_simulation;
+          return (
+            <div className={`rounded-xl border p-5 space-y-4 ${sim.success ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30' : 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`h-9 w-9 rounded-full flex items-center justify-center ${sim.success ? 'bg-green-100 dark:bg-green-900' : 'bg-red-100 dark:bg-red-900'}`}>
+                  {sim.success
+                    ? <svg className="h-5 w-5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    : <svg className="h-5 w-5 text-red-500 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  }
+                </div>
+                <div>
+                  <p className={`text-sm font-semibold ${sim.success ? 'text-green-800 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
+                    {sim.success ? 'Simulation Successful' : 'Simulation Failed'}
+                  </p>
+                  <p className={`text-xs mt-0.5 ${sim.success ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>{sim.message}</p>
+                </div>
+              </div>
+              {sim.success && (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleF26Post}
+                    className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 transition-colors"
+                  >
+                    Post to SAP (F-26)
+                  </button>
+                </div>
+              )}
+              {!sim.success && (
+                <PaymentAdviceForm
+                  extracted={state.editedData}
+                  isSimulating={false}
+                  onSimulate={handleF26Simulate}
+                />
+              )}
+            </div>
+          );
+        })()}
+        {isPaymentAdvice && state.step === 'complete' && doc?.f26_posting && (() => {
+          const posting = doc.f26_posting;
+          const isSuccess = posting.status === 'success';
+          return (
+            <div className={`rounded-xl border p-5 space-y-3 ${isSuccess ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30' : 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`h-9 w-9 rounded-full flex items-center justify-center ${isSuccess ? 'bg-green-100 dark:bg-green-900' : 'bg-red-100 dark:bg-red-900'}`}>
+                  {isSuccess
+                    ? <svg className="h-5 w-5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    : <svg className="h-5 w-5 text-red-500 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  }
+                </div>
+                <div>
+                  <p className={`text-sm font-semibold ${isSuccess ? 'text-green-800 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
+                    {isSuccess ? `Payment Posted — ${posting.document_number}` : 'Payment Posting Failed'}
+                  </p>
+                  <p className={`text-xs mt-0.5 ${isSuccess ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>{posting.message}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── Non-PO Invoice flow: Step 3 FB60 Form ──────────────────────── */}
         {isNonPO && state.step === 'extracted' && (
@@ -813,7 +979,7 @@ export default function UploadPage() {
           <div className="rounded-xl border border-neutral-200 bg-white p-8 dark:border-neutral-700 dark:bg-neutral-800">
             <PostingLoading
               lineItemCount={state.editedData?.line_items?.length ?? 0}
-              target={isNonPO ? 'FB60' : isMigo ? 'MIRO (via MIGO)' : isServicePO ? 'MIRO (Service PO)' : 'MIRO'}
+              target={isNonPO ? 'FB60' : isMigo ? 'MIRO (via MIGO)' : isServicePO ? 'MIRO (Service PO)' : isPaymentAdvice ? 'F-26' : 'MIRO'}
             />
           </div>
         )}

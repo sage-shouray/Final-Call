@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Upload, History, Clock,
-  FileText, ClipboardList, FileCheck, Package, Truck,
+  FileText, ClipboardList, FileCheck, Package, Truck, Receipt,
   Settings, BarChart2, PanelLeftClose, PanelLeftOpen,
   ShieldCheck, LogOut, Users, IndianRupee,
 } from 'lucide-react';
@@ -144,6 +144,7 @@ export function Sidebar() {
         { label: 'Payment Advice',  to: '/upload?type=payment_advice',  icon: FileCheck     },
         { label: 'Goods Receipt',   to: '/upload?type=goods_receipt',   icon: Package       },
         { label: 'Freight Invoice', to: '/upload?type=freight_invoice', icon: Truck         },
+        { label: 'Credit Note',     to: '/upload?type=credit_note',     icon: Receipt       },
       ],
     },
     ...(isManager ? [{

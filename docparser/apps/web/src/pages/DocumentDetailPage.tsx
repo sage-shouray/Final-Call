@@ -101,7 +101,7 @@ function getTimeline(doc: Document): TimelineStep[] {
     description: doc.extracted
       ? `${doc.extracted.line_items?.length ?? 0} line item${doc.extracted.line_items?.length === 1 ? '' : 's'} extracted`
       : status === DocumentStatus.EXTRACTING
-        ? 'Processing with Gemini AI…'
+        ? 'Processing OCR extraction…'
         : 'Pending',
     timestamp:   doc.extracted ? doc.updated_at : null,
     done:        !!doc.extracted,

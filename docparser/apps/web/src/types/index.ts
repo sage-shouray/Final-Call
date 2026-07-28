@@ -3,16 +3,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export enum DocumentStatus {
-  UPLOADED   = 'uploaded',
-  EXTRACTING = 'extracting',
-  EXTRACTED  = 'extracted',
-  VALIDATING = 'validating',
-  VALIDATED  = 'validated',
-  GR_POSTING = 'gr_posting',
-  GR_POSTED  = 'gr_posted',
-  POSTING    = 'posting',
-  POSTED     = 'posted',
-  FAILED     = 'failed',
+  UPLOADED    = 'uploaded',
+  EXTRACTING  = 'extracting',
+  EXTRACTED   = 'extracted',
+  VALIDATING  = 'validating',
+  VALIDATED   = 'validated',
+  GR_POSTING  = 'gr_posting',
+  GR_POSTED   = 'gr_posted',
+  SIMULATING  = 'simulating',
+  SIMULATED   = 'simulated',
+  POSTING     = 'posting',
+  POSTED      = 'posted',
+  FAILED      = 'failed',
 }
 
 export enum DocumentType {
@@ -21,14 +23,21 @@ export enum DocumentType {
   PAYMENT_ADVICE  = 'payment_advice',
   GOODS_RECEIPT   = 'goods_receipt',
   FREIGHT_INVOICE = 'freight_invoice',
+  CREDIT_NOTE     = 'credit_note',
 }
 
 export enum TCode {
-  MIRO = 'MIRO',
-  FB60 = 'FB60',
-  VA01 = 'VA01',
-  F28  = 'F-28',
-  MIGO = 'MIGO',
+  MIRO   = 'MIRO',
+  FB60   = 'FB60',
+  VA01   = 'VA01',
+  F28    = 'F-28',
+  MIGO   = 'MIGO',
+  CREDIT = 'CREDIT',
+}
+
+export enum CreditCase {
+  CREDIT_MEMO       = 'credit_memo',
+  SUBSEQUENT_CREDIT = 'subsequent_credit',
 }
 
 export enum InvoiceSubtype {
@@ -233,6 +242,40 @@ export interface FB60FormData {
   invoice_items:    FB60InvoiceItem[];
 }
 
+export interface F26FormData {
+  company_code:  string;
+  customer:      string;
+  invoice:       string;
+  fiscal_year:   string;
+  document_date: string;
+  posting_date:  string;
+  currency:      string;
+  amount:        string;
+  bank_gl:       string;
+  value_date:    string;
+  reference:     string;
+  header_text:   string;
+  item_text:     string;
+}
+
+export interface F26Simulation {
+  simulated_at: string;
+  payload_sent: Record<string, unknown>;
+  status:       string;
+  message:      string;
+  success:      boolean;
+  sap_response: Record<string, unknown>;
+}
+
+export interface F26Posting {
+  posted_at:       string;
+  payload_sent:    Record<string, unknown>;
+  document_number: string;
+  message:         string;
+  status:          'success' | 'failed';
+  sap_response:    Record<string, unknown>;
+}
+
 export interface FB60Posting {
   posted_at:    string;
   payload_sent: Record<string, unknown>;
@@ -281,6 +324,8 @@ export interface Document {
   fb60_posting:   FB60Posting | null;
   so_simulation:  Record<string, unknown> | null;
   so_posting:     Record<string, unknown> | null;
+  f26_simulation: F26Simulation | null;
+  f26_posting:    F26Posting | null;
   retry_count:    number;
   error_log:      ErrorEntry[];
   created_at:     string;
@@ -314,6 +359,37 @@ export interface ValidationResult {
   gr_status:            GRStatusEntry[];
   is_valid:             boolean;
   recommendation:       string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Credit Note comparison (extracted invoice vs. originally posted MIRO)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CreditLineDiff {
+  line_number:        string;
+  po_item:             string;
+  material_code:       string;
+  extracted_quantity:  number;
+  miro_quantity:       number;
+  quantity_changed:    boolean;
+  extracted_price:     number;
+  miro_price:          number;
+  price_changed:       boolean;
+  extracted_amount:    number;
+  miro_amount:         number;
+  extracted_tax:       number;
+  miro_tax:            number;
+  matched:             boolean;
+}
+
+export interface CreditComparisonResult {
+  document_id:  string;
+  po_number:    string;
+  miro_posted:  boolean;
+  miro_message: string;
+  credit_case:  CreditCase | null;
+  reason:       string;
+  line_diffs:   CreditLineDiff[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
