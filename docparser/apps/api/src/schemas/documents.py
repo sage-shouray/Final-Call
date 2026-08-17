@@ -19,6 +19,7 @@ class DocumentListItem(BaseModel):
     invoice_subtype: str = ""
     grn_number: str = ""
     miro_number: str = ""
+    park_number: str = ""
     fb60_number: str = ""
 
 
@@ -60,6 +61,12 @@ class ValidationResultResponse(BaseModel):
 
 
 class MIROTriggerResponse(BaseModel):
+    document_id: str
+    status: str
+    message: str
+
+
+class MIROParkTriggerResponse(BaseModel):
     document_id: str
     status: str
     message: str
@@ -139,7 +146,10 @@ class DocumentResponse(BaseModel):
     sap_validation: dict[str, Any] | None = None
     grn_posting: dict[str, Any] | None = None
     miro_posting: dict[str, Any] | None = None
+    miro_parking: dict[str, Any] | None = None
     fb60_posting: dict[str, Any] | None = None
+    so_simulation: dict[str, Any] | None = None
+    so_posting: dict[str, Any] | None = None
     f26_simulation: dict[str, Any] | None = None
     f26_posting: dict[str, Any] | None = None
     retry_count: int

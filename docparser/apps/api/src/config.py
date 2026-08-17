@@ -70,10 +70,13 @@ class Settings(BaseSettings):
     SAP_USERNAME: str = ""
     SAP_PASSWORD: SecretStr = Field(default="")
     SAP_TIMEOUT_SECONDS: Annotated[int, Field(ge=5, le=300)] = 120
+    # Fallback company code for SAP calls that require one (Service PO validation)
+    # when the PO response doesn't carry a COM_CODE of its own.
+    SAP_COMPANY_CODE: str = "SSDN"
 
     # ── Google AI (Gemini) ────────────────────────────────────────────────
     GEMINI_API_KEY: SecretStr = Field(default="")
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-flash-latest"
 
     # ── Storage (S3-compatible) ───────────────────────────────────────────
     S3_BUCKET: str = "docparser-uploads"

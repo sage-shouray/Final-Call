@@ -22,6 +22,22 @@ class SAPGRNDetail(BaseModel):
     NET_AMOUNT: str = "0"
     STATUS: str = ""
     LOCATION: str = ""
+    # Service PO (TYPE=ZSER) lines carry the service entry sheet here instead:
+    # GR_NUMBER/GR_QUANTITY come back empty and SSES_NO holds the SES number.
+    SPO_ITEM_NUMBER: str = ""
+    SACC_CAT: str = ""
+    SITEM_CAT: str = ""
+    SNET_AMOUNT: str = "0"
+    SSES_NO: str = ""
+    SSES_YEAR: str = ""
+
+    @property
+    def ses_number(self) -> str:
+        """The confirming document for this line — SES number on service POs,
+        GR number on material POs. Empty when the line was never confirmed."""
+        value = (self.SSES_NO or self.GR_NUMBER or "").strip()
+        # SAP pads unset document numbers with zeros rather than leaving them blank.
+        return "" if not value.strip("0") else value
 
 
 class SAPPOLineItem(BaseModel):
@@ -428,3 +444,131 @@ class MIRODetailResponse(BaseModel):
     def miro_posted(self) -> bool:
         """True if at least one MIRO document already exists for this PO."""
         return self.STATUS.strip().lower() == "success" and len(self.DATA) > 0
+
+
+# ---------------------------------------------------------------------------
+# Service PO Validation — ZSPO_VALD/SERV_PO_VAL
+# ---------------------------------------------------------------------------
+
+
+class ServicePOValidationRequest(BaseModel):
+    po_number:      str   = ""
+    po_item:        str   = ""
+    invoice_qty:    float = 0.0
+    invoice_amount: float = 0.0
+    company_code:   str   = ""   # mandatory as of the Aug-2026 SERV_PO_VAL redeploy
+
+
+# Tolerances for float comparison against SAP-returned figures.
+_QTY_TOLERANCE    = 1e-6
+_AMOUNT_TOLERANCE = 0.01   # one paisa — SAP rounds to 2 decimals
+
+
+class ServicePOValidationResponse(BaseModel):
+    """Response from ZSPO_VALD/SERV_PO_VAL.
+
+    As of the Aug-2026 redeploy this endpoint validates *and posts the MIRO* in a
+    single call, so it is a side-effecting operation — never call it during
+    validation. It reports the two phases separately: VALIDATION_STATUS says
+    whether the invoice fit inside the PO, MIRO_STATUS says whether the posting
+    succeeded, and INVOICE_DOC carries the resulting MIRO number.
+
+    STATUS/MESSAGE are the pre-redeploy field names, kept so an older SAP build
+    still parses; the accessors below prefer the new names and fall back.
+    """
+    VALIDATION_STATUS:  str = ""
+    VALIDATION_MESSAGE: str = ""
+    MIRO_STATUS:        str = ""
+    MIRO_MESSAGE:       str = ""
+    INVOICE_DOC:        str = ""
+    FISCAL_YEAR:        int = 0
+
+    STATUS:         str   = ""
+    MESSAGE:        str   = ""
+    TOTAL_QTY:      float = 0.0
+    TOTAL_NET:      float = 0.0
+    TOTAL_GROSS:    float = 0.0
+    CONSUMED_QTY:   float = 0.0
+    CONSUMED_NET:   float = 0.0
+    CONSUMED_GROSS: float = 0.0
+    AVAILABLE_QTY:    float = 0.0
+    AVAILABLE_NET:    float = 0.0
+    AVAILABLE_GROSS:  float = 0.0
+    INVOICE_QTY:      float = 0.0
+    INVOICE_AMOUNT:   float = 0.0
+    REMAINING_QTY:    float = 0.0
+    REMAINING_NET:    float = 0.0
+    REMAINING_GROSS:  float = 0.0
+
+    @property
+    def validation_ok(self) -> bool:
+        """True if SAP accepted the invoice against the PO (phase 1)."""
+        value = self.VALIDATION_STATUS or self.STATUS
+        return value.strip().upper() == "SUCCESS"
+
+    @property
+    def miro_ok(self) -> bool:
+        """True if SAP actually created the MIRO document (phase 2)."""
+        return self.MIRO_STATUS.strip().upper() == "SUCCESS" and bool(self.miro_number)
+
+    @property
+    def miro_number(self) -> str:
+        """The posted MIRO document number, empty when nothing was posted."""
+        value = self.INVOICE_DOC.strip()
+        return "" if not value.strip("0") else value
+
+    @property
+    def message(self) -> str:
+        """Best available human-readable message across both phases."""
+        return (
+            (self.MIRO_MESSAGE or "").strip()
+            or (self.VALIDATION_MESSAGE or "").strip()
+            or (self.MESSAGE or "").strip()
+        )
+
+    @property
+    def succeeded(self) -> bool:
+        """Both phases passed — the invoice validated *and* the MIRO was created."""
+        return self.validation_ok and self.miro_ok
+
+    # AVAILABLE_* is reported *after* this invoice is applied, so it already is
+    # the remaining balance. Older builds returned explicit REMAINING_* fields.
+    @property
+    def remaining_qty(self) -> float:
+        return self.REMAINING_QTY or self.AVAILABLE_QTY
+
+    @property
+    def remaining_net(self) -> float:
+        return self.REMAINING_NET or self.AVAILABLE_NET
+
+    @property
+    def consumption_case(self) -> str:
+        """Which outcome this line landed on.
+
+          rejected — SAP refused it, or validation passed but the MIRO posting failed
+          full     — the PO line's value is now fully consumed
+          partial  — value remains on the line for a later invoice
+        """
+        if not self.succeeded:
+            return "rejected"
+        return "full" if self.remaining_net <= _AMOUNT_TOLERANCE else "partial"
+
+    @property
+    def blocking_reason(self) -> str:
+        """Why this line did not post; empty when it did.
+
+        Reports the message from the phase that actually failed — a validation
+        failure must not be explained by a leftover MIRO message.
+        """
+        if not self.validation_ok:
+            return (
+                (self.VALIDATION_MESSAGE or "").strip()
+                or (self.MESSAGE or "").strip()
+                or "SAP rejected this line"
+            )
+        if not self.miro_ok:
+            return (
+                (self.MIRO_MESSAGE or "").strip()
+                or "Validation passed but SAP did not create the MIRO"
+            )
+        return ""

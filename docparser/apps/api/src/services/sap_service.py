@@ -38,6 +38,17 @@ from src.schemas.sap import (
 log = structlog.get_logger(__name__)
 
 
+def _pad_po_item(po_item: str) -> str:
+    """Normalise a PO line number to SAP's 5-digit item format ("10" → "00010").
+
+    Extraction yields whatever the PDF printed ("1", "10", "00010"); SAP's
+    ZSPO_VALD/SERV_PO_VAL matches on the padded form and finds nothing otherwise.
+    Non-numeric values are passed through untouched.
+    """
+    clean = str(po_item or "").strip()
+    return clean.zfill(5) if clean.isdigit() else clean
+
+
 # ---------------------------------------------------------------------------
 # Redis-backed circuit breaker storage
 # ---------------------------------------------------------------------------
@@ -300,6 +311,12 @@ class SAPService:
         url = self._sap_url("ZMIRO/MIRO")
         return await self._http_post(url, payload)
 
+    async def _post_park_miro_raw(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Single MIRO Park POST — same payload contract as post_miro, no retry to
+        prevent duplicate parking in SAP."""
+        url = self._sap_url("zmiro_park/PARK")
+        return await self._http_post(url, payload)
+
     async def _fetch_miro_details_raw(self, po_number: str) -> dict[str, Any]:
         """Retry-wrapped MIRO-status lookup — GET with po_number as a query param."""
         url = self._sap_url("zmiro_details/MIRO_DETAILS")
@@ -412,6 +429,77 @@ class SAPService:
             raw_response=raw,
         )
 
+    async def _post_service_po_val_raw(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """POST ZSPO_VALD/SERV_PO_VAL — deliberately never retried.
+
+        This call posts a MIRO document on success, so a retry risks double-posting an
+        invoice. One attempt only; a transport failure is reported to the caller with
+        the posting outcome left unknown.
+
+        SAP returns HTTP 400 (not 200) with a JSON body when the invoice exceeds what's
+        available — we need that body, not an exception, so the caller can inspect the
+        status fields like any other response.
+        """
+        import httpx
+        import json as _json
+        url = self._sap_url("ZSPO_VALD/SERV_PO_VAL")
+        cleaned = SAPService._clean_numbers(payload)
+        # Log what we actually send — a "Mandatory fields are missing" reply is
+        # undiagnosable without it.
+        log.info("SAP service PO validation payload", payload=_json.dumps(cleaned))
+        timeout_secs = settings.SAP_TIMEOUT_SECONDS
+        auth = (
+            (settings.SAP_USERNAME, settings.SAP_PASSWORD.get_secret_value())
+            if settings.SAP_USERNAME
+            else None
+        )
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=30.0, read=float(timeout_secs), write=30.0, pool=30.0),
+            auth=auth,
+        ) as client:
+            resp = await client.post(
+                url,
+                json=cleaned,
+                headers={"Content-Type": "application/json", "Accept": "application/json"},
+            )
+            log.info(
+                "SAP POST request", url=url, status_code=resp.status_code, response_body=resp.text,
+            )
+            try:
+                return resp.json()
+            except Exception:
+                resp.raise_for_status()
+                raise SAPConnectionError(f"SAP returned HTTP {resp.status_code} with a non-JSON body", status_code=502)
+
+    async def post_service_po_line(
+        self,
+        po_number: str,
+        po_item: str,
+        invoice_qty: float,
+        invoice_amount: float,
+        company_code: str = "",
+    ) -> "ServicePOValidationResponse":
+        """Validate AND post the MIRO for a single Service PO line via ZSPO_VALD/SERV_PO_VAL.
+
+        WARNING — side-effecting. Since the Aug-2026 redeploy this endpoint no longer
+        just validates: on success it creates the MIRO document and returns its number
+        in INVOICE_DOC. Call it only from the posting step, never from validation, and
+        never speculatively or in a retry loop.
+
+        `company_code` is mandatory (SAP replies "Mandatory fields are missing" without
+        it). Callers pass the PO's own COM_CODE; settings.SAP_COMPANY_CODE is the fallback.
+        """
+        from src.schemas.sap import ServicePOValidationResponse
+        payload = {
+            "po_number": self._clean_po_number(po_number),
+            "po_item": _pad_po_item(po_item),
+            "invoice_qty": invoice_qty,
+            "invoice_amount": invoice_amount,
+            "company_code": (company_code or settings.SAP_COMPANY_CODE).strip(),
+        }
+        raw = await self._post_service_po_val_raw(payload)
+        return ServicePOValidationResponse.model_validate(raw)
+
     async def fetch_miro_details(self, po_number: str) -> MIRODetailResponse:
         """Check whether a MIRO document already exists for this PO.
 
@@ -472,6 +560,52 @@ class SAPService:
 
         return MIROResponse(
             miro_number=miro_number,
+            status=status,
+            message=message,
+            sap_response=raw,
+            success=success,
+        )
+
+    async def park_miro(self, payload: MIROPayload) -> MIROResponse:
+        """Park the MIRO invoice payload to SAP (draft — not yet posted).
+
+        Same payload contract as post_miro; only the endpoint differs. Parking
+        is a dead end from this app's perspective — any further action on a
+        parked document (completing it into a real posted invoice) happens
+        directly in SAP, outside this system.
+        """
+        log.info("parking MIRO to SAP")
+        raw_payload = payload.model_dump()
+        raw: dict[str, Any] = await self._post_park_miro_raw(raw_payload)
+
+        park_number = str(raw.get("INVOICE_DOCUMENT_NO") or raw.get("MIRO_NUMBER") or "").strip()
+        message = MIROResponse.parse_message(raw.get("MESSAGE", ""))
+
+        already_parked = any(
+            phrase in message.lower()
+            for phrase in ("already parked", "already done", "already posted", "already exists", "already created")
+        )
+
+        if not park_number and message:
+            import re as _re
+            match = _re.search(r'\b(\d{10})\b', message)
+            if match:
+                park_number = match.group(1)
+
+        success = bool(park_number) or already_parked
+        status = raw.get("STATUS", "S") if success else raw.get("STATUS", "") or ""
+
+        log.info(
+            "MIRO park response received",
+            park_number=park_number,
+            status=status,
+            success=success,
+            already_parked=already_parked,
+            message=message,
+        )
+
+        return MIROResponse(
+            miro_number=park_number,
             status=status,
             message=message,
             sap_response=raw,

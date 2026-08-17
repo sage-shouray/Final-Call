@@ -17,6 +17,7 @@ const statusConfig: Record<
   [DocumentStatus.SIMULATED]:  { label: 'Simulated',   variant: 'success'  },
   [DocumentStatus.POSTING]:    { label: 'Posting',     variant: 'warning'  },
   [DocumentStatus.POSTED]:     { label: 'Posted',      variant: 'success'  },
+  [DocumentStatus.PARKED]:     { label: 'Parked',      variant: 'info'     },
   [DocumentStatus.FAILED]:     { label: 'Failed',     variant: 'error'    },
 };
 

@@ -22,6 +22,7 @@ from src.schemas.documents import (
     F26SimulateTriggerResponse,
     FB60TriggerResponse,
     GRNTriggerResponse,
+    MIROParkTriggerResponse,
     MIROTriggerResponse,
     PresignedUrlResponse,
     ValidationResultResponse,
@@ -257,6 +258,7 @@ async def list_documents(
         extracted = safe.get("extracted") or {}
         grn  = safe.get("grn_posting") or {}
         miro = safe.get("miro_posting") or {}
+        park = safe.get("miro_parking") or {}
         fb60 = safe.get("fb60_posting") or {}
         items.append(DocumentListItem(
             id=safe.get("_id") or safe.get("id", ""),
@@ -270,6 +272,7 @@ async def list_documents(
             invoice_subtype=safe.get("invoice_subtype") or "",
             grn_number=grn.get("grn_number") or "",
             miro_number=miro.get("miro_number") or "",
+            park_number=park.get("park_number") or "",
             fb60_number=fb60.get("fb60_number") or "",
         ))
 
@@ -305,7 +308,12 @@ async def get_document(document_id: str, current_user: CurrentUser) -> DocumentR
         sap_validation=safe.get("sap_validation"),
         grn_posting=safe.get("grn_posting"),
         miro_posting=safe.get("miro_posting"),
+        miro_parking=safe.get("miro_parking"),
         fb60_posting=safe.get("fb60_posting"),
+        so_simulation=safe.get("so_simulation"),
+        so_posting=safe.get("so_posting"),
+        f26_simulation=safe.get("f26_simulation"),
+        f26_posting=safe.get("f26_posting"),
         retry_count=safe.get("retry_count", 0),
         error_log=safe.get("error_log", []),
         created_at=safe["created_at"],
@@ -516,6 +524,20 @@ async def post_to_miro(
                 f"Document must be VALIDATED or GR_POSTED (current: {current_status})",
                 error_code="INVALID_STATUS_TRANSITION",
             )
+
+        # Service PO: every validation gate (SES present, within PO line, within
+        # what SAP still has available) must have passed before MIRO is allowed.
+        if (doc.get("invoice_subtype") or "") == InvoiceSubtype.SERVICE_PO:
+            gates = (doc.get("sap_validation") or {}).get("gates") or {}
+            failed = [name for name, passed in gates.items() if not passed]
+            if not gates or failed:
+                raise ValidationError(
+                    "Service PO validation has not passed"
+                    + (f" (failed: {', '.join(failed)})" if failed else "")
+                    + " — re-run validation before posting to MIRO.",
+                    error_code="SERVICE_PO_VALIDATION_FAILED",
+                )
+
         await repo.update_status(doc["id"], DocumentStatus.POSTING)
         await session.commit()
 
@@ -536,6 +558,59 @@ async def post_to_miro(
         document_id=document_id,
         performed_by=current_user.sub,
     ))
+
+    return MIROTriggerResponse(document_id=document_id, status="posting", message="MIRO posting started.")
+
+
+# ---------------------------------------------------------------------------
+# POST /api/documents/{document_id}/park-miro
+#
+# Material PO only — parks the MIRO invoice as a draft in SAP instead of
+# posting it. Dead end from this app's perspective: any follow-up on the
+# parked document (completing it into a real posted invoice) happens
+# directly in SAP, not through this system.
+# ---------------------------------------------------------------------------
+
+@router.post("/{document_id}/park-miro", response_model=MIROParkTriggerResponse, status_code=202)
+async def park_miro(
+    document_id: str,
+    current_user: CurrentUser,
+    _role: Annotated[Any, require_role("manager", "admin")] = None,
+) -> MIROParkTriggerResponse:
+    async with AsyncSessionLocal() as session:
+        repo = DocumentRepository(session)
+        doc = await repo.find_by_document_id(document_id)
+        if not doc:
+            raise NotFoundError(f"Document '{document_id}' not found", error_code="DOCUMENT_NOT_FOUND")
+        _assert_tenant(doc, current_user)
+
+        invoice_subtype = doc.get("invoice_subtype") or ""
+        if invoice_subtype in {InvoiceSubtype.SERVICE_PO, InvoiceSubtype.FREIGHT_PO}:
+            raise ValidationError(
+                "Park is only available for Material PO invoices", error_code="PARK_NOT_SUPPORTED"
+            )
+
+        current_status = doc.get("status", "")
+        if current_status == DocumentStatus.POSTING:
+            raise ValidationError("MIRO posting/parking is already in progress", error_code="ALREADY_POSTING")
+        if current_status != DocumentStatus.VALIDATED:
+            raise ValidationError(
+                f"Document must be VALIDATED (current: {current_status})",
+                error_code="INVALID_STATUS_TRANSITION",
+            )
+        await repo.update_status(doc["id"], DocumentStatus.POSTING)
+        await session.commit()
+
+    import asyncio as _asyncio
+    from src.workers.sap_worker import run_miro_park_direct
+    _asyncio.create_task(run_miro_park_direct(document_id, current_user.sub), name=f"miro-park-{document_id}")
+    _asyncio.create_task(_write_doc_audit(
+        action="document.sap.miro_parked",
+        document_id=document_id,
+        performed_by=current_user.sub,
+    ))
+
+    return MIROParkTriggerResponse(document_id=document_id, status="posting", message="MIRO parking started.")
 
     return MIROTriggerResponse(document_id=document_id, status="posting", message="MIRO posting started.")
 

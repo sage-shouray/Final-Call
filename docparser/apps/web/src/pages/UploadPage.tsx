@@ -43,6 +43,7 @@ interface WizardState {
   invoiceSubtype:   InvoiceSubtype | null;
   editedData:       ExtractedData | null;
   creditComparison: CreditComparisonResult | null;
+  miroAction:       'post' | 'park';
 }
 
 const INITIAL: WizardState = {
@@ -55,6 +56,7 @@ const INITIAL: WizardState = {
   invoiceSubtype:    null,
   editedData:        null,
   creditComparison:  null,
+  miroAction:        'post',
 };
 
 // ─── Step config ──────────────────────────────────────────────────────────────
@@ -205,6 +207,9 @@ export default function UploadPage() {
     if (status === DocumentStatus.POSTED && state.step === 'posting') {
       fetchDocumentAndAdvance(state.documentId, 'complete');
     }
+    if (status === DocumentStatus.PARKED && state.step === 'posting') {
+      fetchDocumentAndAdvance(state.documentId, 'complete');
+    }
     if (status === DocumentStatus.FAILED) {
       toast.error('Processing failed. Please try again.');
       setState((s) => ({ ...s, step: 'upload' }));
@@ -259,6 +264,9 @@ export default function UploadPage() {
           toast.error(doc.f26_posting?.message || 'SAP posting failed. Please retry.');
           setState((prev) => ({ ...prev, step: 'validated', document: doc }));
         } else if (s === DocumentStatus.POSTED && state.step === 'posting') {
+          clearInterval(pollRef.current);
+          setState((prev) => ({ ...prev, step: 'complete', document: doc }));
+        } else if (s === DocumentStatus.PARKED && state.step === 'posting') {
           clearInterval(pollRef.current);
           setState((prev) => ({ ...prev, step: 'complete', document: doc }));
         } else if (s === DocumentStatus.EXTRACTED && state.step === 'posting') {
@@ -380,12 +388,25 @@ export default function UploadPage() {
 
   async function handlePostMiro() {
     if (!state.documentId) return;
-    setState((s) => ({ ...s, step: 'posting' }));
+    setState((s) => ({ ...s, step: 'posting', miroAction: 'post' }));
     try {
       await api.post(`/documents/${state.documentId}/post-miro`);
     } catch {
       toast.error('Failed to trigger MIRO posting. Retrying…');
       setState((s) => ({ ...s, step: isMigo ? 'gr_posted' : 'validated' }));
+    }
+  }
+
+  // ── Park MIRO (Material PO only) ─────────────────────────────────────────────
+
+  async function handleParkMiro() {
+    if (!state.documentId) return;
+    setState((s) => ({ ...s, step: 'posting', miroAction: 'park' }));
+    try {
+      await api.post(`/documents/${state.documentId}/park-miro`);
+    } catch {
+      toast.error('Failed to trigger MIRO parking. Please retry.');
+      setState((s) => ({ ...s, step: 'validated' }));
     }
   }
 
@@ -755,6 +776,8 @@ export default function UploadPage() {
             validation={doc.sap_validation}
             onPost={handlePostMiro}
             isPosting={false}
+            onPark={handleParkMiro}
+            isParking={false}
           />
         )}
 
@@ -980,16 +1003,18 @@ export default function UploadPage() {
             <PostingLoading
               lineItemCount={state.editedData?.line_items?.length ?? 0}
               target={isNonPO ? 'FB60' : isMigo ? 'MIRO (via MIGO)' : isServicePO ? 'MIRO (Service PO)' : isPaymentAdvice ? 'F-26' : 'MIRO'}
+              action={state.miroAction === 'park' ? 'Parking' : 'Posting'}
             />
           </div>
         )}
 
         {/* ── Step 5b: Complete ──────────────────────────────────────────── */}
-        {state.step === 'complete' && (doc?.miro_posting || doc?.fb60_posting) && (
+        {state.step === 'complete' && (doc?.miro_posting || doc?.fb60_posting || doc?.miro_parking) && (
           <div className="rounded-xl border border-neutral-200 bg-white p-6 dark:border-neutral-700 dark:bg-neutral-800">
             <SuccessPanel
               miro={doc.miro_posting}
               fb60={doc.fb60_posting}
+              parked={doc.miro_parking}
               extracted={doc.extracted}
               onReset={reset}
             />

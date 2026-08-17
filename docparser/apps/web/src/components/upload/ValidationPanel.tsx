@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CheckCircle2, XCircle, AlertTriangle, FileText, Database } from 'lucide-react';
-import type { SAPValidation, MismatchEntry, GRStatusEntry } from '@/types';
+import type { SAPValidation, MismatchEntry, GRStatusEntry, ServicePOCase, ServicePOPosting } from '@/types';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { cn } from '@/lib/cn';
 
@@ -253,13 +253,148 @@ function GRTab({ grStatus }: { grStatus: GRStatusEntry[] }) {
 
 // ─── Main results panel ───────────────────────────────────────────────────────
 
+// ─── Service PO gates + availability ─────────────────────────────────────────
+
+const CASE_STYLES: Record<ServicePOCase, { label: string; cls: string }> = {
+  full:     { label: 'Fully consumed', cls: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
+  partial:  { label: 'Partial invoice', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
+  rejected: { label: 'Not posted', cls: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
+};
+
+const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/**
+ * Service PO status. Before posting this shows only the validation gates; after
+ * posting it also shows what SAP returned from ZSPO_VALD/SERV_PO_VAL, which
+ * validates and creates the MIRO in one call.
+ */
+export function ServicePOSection({
+  validation,
+  posting,
+}: {
+  validation: SAPValidation;
+  posting?: ServicePOPosting | null;
+}) {
+  const gates = validation.gates;
+  const spo   = posting ?? null;
+  if (!spo && !gates) return null;
+
+  const gateRows = gates
+    ? [
+        { label: 'SES confirmed',  ok: gates.ses_present },
+        { label: 'Within PO line', ok: gates.within_po_line },
+      ]
+    : [];
+
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white p-5 space-y-4 dark:border-neutral-700 dark:bg-neutral-900">
+      <div className="flex flex-wrap items-center gap-3">
+        <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">Service PO</h3>
+        {spo && spo.case !== 'none' && (
+          <span className={cn('rounded-full px-2.5 py-0.5 text-[11px] font-semibold', CASE_STYLES[spo.case as ServicePOCase]?.cls)}>
+            {CASE_STYLES[spo.case as ServicePOCase]?.label}
+          </span>
+        )}
+        {spo?.all_posted && spo.miro_number && (
+          <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-[11px] font-semibold text-green-700 dark:bg-green-900/40 dark:text-green-300">
+            MIRO {spo.miro_numbers.join(', ')}
+          </span>
+        )}
+        {spo && !spo.all_posted && (
+          <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-semibold text-red-700 dark:bg-red-900/40 dark:text-red-300">
+            MIRO not created
+          </span>
+        )}
+      </div>
+
+      {!spo && gateRows.length > 0 && (
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          SAP performs the final availability check and creates the MIRO in the same step.
+        </p>
+      )}
+
+      {gateRows.length > 0 && (
+        <div className="grid gap-2 sm:grid-cols-3">
+          {gateRows.map(({ label, ok }) => (
+            <div
+              key={label}
+              className={cn(
+                'flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium',
+                ok
+                  ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300'
+                  : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300',
+              )}
+            >
+              {ok ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : <XCircle className="h-3.5 w-3.5 shrink-0" />}
+              {label}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {spo && spo.blocking_reasons.length > 0 && (
+        <ul className="space-y-1 rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+          {spo.blocking_reasons.map((reason) => (
+            <li key={reason} className="flex items-start gap-2 text-xs text-red-700 dark:text-red-300">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {reason}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {spo && spo.lines.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-xs">
+            <thead>
+              <tr className="border-b border-neutral-100 text-left text-[10px] uppercase tracking-wider text-neutral-400 dark:border-neutral-700 dark:text-neutral-500">
+                <th className="py-2 pr-3 font-semibold">Item</th>
+                <th className="py-2 pr-3 font-semibold text-right">Invoice Qty</th>
+                <th className="py-2 pr-3 font-semibold text-right">Invoice Amt</th>
+                <th className="py-2 pr-3 font-semibold text-right">Consumed Net</th>
+                <th className="py-2 pr-3 font-semibold text-right">Remaining Net</th>
+                <th className="py-2 pr-3 font-semibold">MIRO</th>
+                <th className="py-2 font-semibold">Result</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100 dark:divide-neutral-700">
+              {spo.lines.map((line) => (
+                <tr key={line.po_item} className="text-neutral-700 dark:text-neutral-300">
+                  <td className="py-2 pr-3 font-mono">{line.po_item}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{line.invoice_qty}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{money(line.invoice_amount)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{money(line.consumed_net)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{money(line.remaining_net)}</td>
+                  <td className="py-2 pr-3 font-mono">
+                    {line.miro_number || <span className="text-neutral-400">—</span>}
+                  </td>
+                  <td className="py-2">
+                    <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', CASE_STYLES[line.case]?.cls)}>
+                      {CASE_STYLES[line.case]?.label}
+                    </span>
+                    {line.blocking_reason && (
+                      <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">{line.blocking_reason}</p>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface ValidationPanelProps {
   validation:  SAPValidation;
   onPost:      () => void;
   isPosting:   boolean;
+  onPark?:     () => void;
+  isParking?:  boolean;
 }
 
-export function ValidationPanel({ validation, onPost, isPosting }: ValidationPanelProps) {
+export function ValidationPanel({ validation, onPost, isPosting, onPark, isParking }: ValidationPanelProps) {
   const [tab, setTab] = useState<Tab>('header');
   const pct = Math.round(validation.overall_confidence * 100);
   const isLow = pct < 75;
@@ -288,6 +423,8 @@ export function ValidationPanel({ validation, onPost, isPosting }: ValidationPan
           })}
         </div>
       </div>
+
+      <ServicePOSection validation={validation} />
 
       {/* Tabs + detail */}
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden dark:border-neutral-700 dark:bg-neutral-900">
@@ -321,23 +458,38 @@ export function ValidationPanel({ validation, onPost, isPosting }: ValidationPan
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={onPost}
-          disabled={isPosting}
-          className={cn(
-            'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-soft-sm transition-colors',
-            'disabled:opacity-60 disabled:pointer-events-none',
-            isLow
-              ? 'bg-amber-500 hover:bg-amber-600 active:bg-amber-700'
-              : 'bg-green-600 hover:bg-green-700 active:bg-green-800',
+        <div className="flex items-center gap-2">
+          {onPark && (
+            <button
+              type="button"
+              onClick={onPark}
+              disabled={isPosting || isParking}
+              className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-soft-sm transition-colors hover:bg-green-700 active:bg-green-800 disabled:opacity-60 disabled:pointer-events-none"
+            >
+              {isParking ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              ) : null}
+              Park for MIRO
+            </button>
           )}
-        >
-          {isPosting ? (
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-          ) : null}
-          {isLow ? 'Post anyway' : 'Post to SAP MIRO'}
-        </button>
+          <button
+            type="button"
+            onClick={onPost}
+            disabled={isPosting || isParking}
+            className={cn(
+              'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-soft-sm transition-colors',
+              'disabled:opacity-60 disabled:pointer-events-none',
+              isLow
+                ? 'bg-amber-500 hover:bg-amber-600 active:bg-amber-700'
+                : 'bg-green-600 hover:bg-green-700 active:bg-green-800',
+            )}
+          >
+            {isPosting ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            ) : null}
+            {isLow ? 'Post anyway' : 'Post to SAP MIRO'}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -203,6 +203,7 @@ const STATUS_LABELS: Record<DocumentStatus, string> = {
   [DocumentStatus.SIMULATED]:  'Simulated',
   [DocumentStatus.POSTING]:    'Posting',
   [DocumentStatus.POSTED]:     'Posted',
+  [DocumentStatus.PARKED]:     'Parked',
   [DocumentStatus.FAILED]:     'Failed',
 };
 
@@ -365,7 +366,7 @@ function activeCount(f: FilterState): number {
 // ─── Export helper ────────────────────────────────────────────────────────────
 
 function exportCSV(docs: DocumentListItem[]) {
-  const header = 'Document ID,Vendor,T-Code,Amount,Status,Confidence,Uploaded,MIRO #';
+  const header = 'Document ID,Vendor,T-Code,Amount,Status,Confidence,Uploaded,MIRO #,Park #';
   const rows = docs.map((d) =>
     [
       d.document_id,
@@ -376,6 +377,7 @@ function exportCSV(docs: DocumentListItem[]) {
       d.confidence_score != null ? `${Math.round(d.confidence_score * 100)}%` : '',
       d.uploaded_at,
       d.miro_number,
+      d.park_number,
     ]
       .map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`)
       .join(','),
@@ -649,7 +651,13 @@ export default function DocumentsPage() {
                         <TableCell><StatusPill status={doc.status} /></TableCell>
                         <TableCell className="text-neutral-500 text-xs dark:text-neutral-400">{doc.uploaded_by ?? '—'}</TableCell>
                         <TableCell className="text-neutral-500 dark:text-neutral-400">{formatDate(doc.uploaded_at)}</TableCell>
-                        <TableCell className="font-mono text-xs">{doc.miro_number || '—'}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {doc.miro_number
+                            ? doc.miro_number
+                            : doc.park_number
+                              ? <span className="text-indigo-600 dark:text-indigo-400">Park: {doc.park_number}</span>
+                              : '—'}
+                        </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <RowAction doc={doc} />
                         </TableCell>

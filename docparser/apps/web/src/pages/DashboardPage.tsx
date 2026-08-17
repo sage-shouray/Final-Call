@@ -339,7 +339,13 @@ export default function DashboardPage() {
                               {doc.miro_number && (
                                 <span className="font-mono text-xs font-semibold text-green-700 dark:text-green-400">MIRO: {doc.miro_number}</span>
                               )}
-                              {!doc.grn_number && !doc.miro_number && (
+                              {doc.park_number && (
+                                <span className="font-mono text-xs font-semibold text-indigo-700 dark:text-indigo-400">Park: {doc.park_number}</span>
+                              )}
+                              {!doc.grn_number && !doc.miro_number && !doc.park_number && doc.status === 'parked' && (
+                                <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-400">Parked (no doc no.)</span>
+                              )}
+                              {!doc.grn_number && !doc.miro_number && !doc.park_number && doc.status !== 'parked' && (
                                 <span className="text-xs text-neutral-300 dark:text-neutral-600">—</span>
                               )}
                             </div>

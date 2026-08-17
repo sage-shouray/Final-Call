@@ -60,6 +60,7 @@ class DocumentStatus(StrEnum):
     SIMULATED   = "simulated"
     POSTING     = "posting"
     POSTED      = "posted"
+    PARKED      = "parked"
     FAILED      = "failed"
 
 
@@ -330,6 +331,7 @@ class DocumentRow(Base, TimestampMixin):
     sap_validation:   Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     grn_posting:      Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     miro_posting:     Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    miro_parking:     Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     fb60_posting:     Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     so_simulation:    Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     so_posting:       Mapped[dict | None] = mapped_column(JSONB, nullable=True)
@@ -365,6 +367,7 @@ class DocumentRow(Base, TimestampMixin):
             "sap_validation":  self.sap_validation,
             "grn_posting":     self.grn_posting,
             "miro_posting":    self.miro_posting,
+            "miro_parking":    self.miro_parking,
             "fb60_posting":    self.fb60_posting,
             "so_simulation":   self.so_simulation,
             "so_posting":      self.so_posting,

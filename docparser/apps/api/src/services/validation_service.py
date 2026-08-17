@@ -329,3 +329,377 @@ async def validate_service_invoice_against_po(
         "is_valid": is_valid,
         "recommendation": recommendation,
     }
+
+
+# ---------------------------------------------------------------------------
+# Service PO workflow — two hard gates, both must pass before posting is allowed
+#
+#   Gate A  SES presence    — zpo_grn/Detail must return an SES for every line
+#   Gate B  PO line ceiling — invoiced qty/amount must be ≤ the PO line figures
+#
+# Availability against previously posted invoices is deliberately NOT checked here.
+# The only endpoint that reports it (ZSPO_VALD/SERV_PO_VAL) also creates the MIRO,
+# so it belongs to the posting step — see post_service_po_lines below.
+#
+# These are confidence-scored for material POs; for service POs they are hard
+# blocks — an invoice failing either must never reach the posting step.
+# ---------------------------------------------------------------------------
+
+
+def _norm_item(value: Any) -> str:
+    """Normalise a PO item number for map lookups — "00010", "10" and "0010" all
+    describe the same line, so compare on the unpadded numeric form."""
+    clean = str(value or "").strip()
+    return clean.lstrip("0") or "0" if clean.isdigit() else clean.upper()
+
+
+def check_service_po_ses(sap_po: SAPPOResponse, extracted: dict[str, Any]) -> dict[str, Any]:
+    """Gate A — every invoiced line must have an approved SES on the PO.
+
+    SES is the service-PO equivalent of a goods receipt: zpo_grn/Detail returns it
+    in each line's GRN[] block. No SES means the service was never confirmed as
+    delivered, so the invoice cannot be posted regardless of the amounts.
+    """
+    inv_lines: list[dict[str, Any]] = extracted.get("line_items") or []
+    sap_line_map = {_norm_item(item.ITEM_NUMBER): item for item in sap_po.PO_LINE_ITEMS}
+
+    entries: list[dict[str, Any]] = []
+    missing: list[str] = []
+
+    for inv_line in inv_lines:
+        line_num = str(inv_line.get("line_number") or "").strip()
+        sap_line = sap_line_map.get(_norm_item(line_num))
+        ses_numbers = [
+            g.ses_number for g in (sap_line.GRN if sap_line else []) if g.ses_number
+        ]
+        if not ses_numbers:
+            missing.append(line_num)
+
+        entries.append({
+            "line_number":  line_num,
+            "po_item":      line_num,
+            "ses_numbers":  ses_numbers,
+            "gr_documents": ses_numbers,   # keeps the existing gr_status UI shape
+            "total_gr_qty": float(_dec(sap_line.RECEIVED_QUANTITY)) if sap_line else 0.0,
+            "invoice_qty":  float(_dec(inv_line.get("quantity", "0"))),
+            "status":       "complete" if ses_numbers else "missing",
+        })
+
+    return {
+        "lines":        entries,
+        "missing_ses":  missing,
+        "all_have_ses": len(missing) == 0 and len(entries) > 0,
+    }
+
+
+def check_service_po_ceilings(
+    extracted: dict[str, Any], sap_po: SAPPOResponse
+) -> dict[str, Any]:
+    """Gate B — invoiced quantity and amount must not exceed the PO line figures.
+
+    Equal is fine (full invoice), less is fine (partial invoice, balance stays
+    open); greater is a hard fail. Gate C re-checks this against what prior
+    invoices already consumed, but failing here means the invoice is wrong on the
+    face of the PO itself and is worth reporting separately.
+    """
+    inv_lines: list[dict[str, Any]] = extracted.get("line_items") or []
+    sap_line_map = {_norm_item(item.ITEM_NUMBER): item for item in sap_po.PO_LINE_ITEMS}
+
+    results: list[dict[str, Any]] = []
+    violations: list[dict[str, str]] = []
+
+    for inv_line in inv_lines:
+        line_num = str(inv_line.get("line_number") or "").strip()
+        sap_line = sap_line_map.get(_norm_item(line_num))
+        inv_qty = _dec(inv_line.get("quantity", "0"))
+        inv_amt = _dec(inv_line.get("amount", "0"))
+
+        if sap_line is None:
+            violations.append(_mismatch(f"line[{line_num}]", line_num, "NOT_FOUND_ON_PO", "error"))
+            results.append({
+                "po_item": line_num, "invoice_qty": float(inv_qty),
+                "invoice_amount": float(inv_amt), "po_qty": 0.0, "po_amount": 0.0,
+                "within_po": False, "reason": "Line item not found on the PO",
+            })
+            continue
+
+        po_qty = _dec(sap_line.ORDERED_QUANTITY)
+        po_amt = _dec(sap_line.NET_AMOUNT)
+        reason = ""
+
+        if inv_qty > po_qty + Decimal("0.000001"):
+            reason = f"Invoiced quantity {inv_qty} exceeds PO quantity {po_qty}"
+            violations.append(_mismatch(f"line[{line_num}].quantity", str(inv_qty), str(po_qty), "error"))
+        elif inv_amt > po_amt + Decimal("0.01"):
+            reason = f"Invoiced amount {inv_amt} exceeds PO line net {po_amt}"
+            violations.append(_mismatch(f"line[{line_num}].amount", str(inv_amt), str(po_amt), "error"))
+
+        results.append({
+            "po_item": line_num,
+            "invoice_qty": float(inv_qty), "invoice_amount": float(inv_amt),
+            "po_qty": float(po_qty), "po_amount": float(po_amt),
+            "within_po": not reason, "reason": reason,
+        })
+
+    return {
+        "lines": results,
+        "violations": violations,
+        "all_within_po": not violations and len(results) > 0,
+    }
+
+
+async def post_service_po_lines(
+    extracted: dict[str, Any],
+    po_number: str,
+    company_code: str = "",
+    already_posted: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Post the Service PO invoice, line by line, via ZSPO_VALD/SERV_PO_VAL.
+
+    WARNING — side-effecting. That endpoint validates against the PO *and* creates
+    the MIRO document in one call, so this belongs to the posting step only. It is
+    never called during validation and never retried: a repeat call would post a
+    second invoice.
+
+    SAP is the authority here — it re-checks availability itself, which is why the
+    validation step no longer duplicates that check.
+
+    `already_posted` maps po_item → MIRO number for lines a previous attempt got
+    through. Posting is per line, so a multi-line invoice can partially succeed;
+    those lines are skipped on a retry instead of being posted a second time.
+    """
+    from src.services.sap_service import get_sap_service
+
+    sap_service = get_sap_service()
+    lines: list[dict[str, Any]] = extracted.get("line_items") or []
+    posted_before = {_norm_item(k): v for k, v in (already_posted or {}).items() if v}
+
+    results: list[dict[str, Any]] = []
+    blocking_reasons: list[str] = []
+    miro_numbers: list[str] = []
+    all_posted = True
+
+    for line in lines:
+        po_item = str(line.get("line_number") or "").strip()
+        invoice_qty = _dec(line.get("quantity", "0"))
+        invoice_amount = _dec(line.get("amount", "0"))
+
+        prior_miro = posted_before.get(_norm_item(po_item))
+        if prior_miro:
+            # Already posted by an earlier attempt — posting again would duplicate
+            # the invoice in SAP.
+            log.info("skipping already-posted service PO line",
+                     po_item=po_item, miro_number=prior_miro)
+            miro_numbers.append(prior_miro)
+            results.append({
+                "po_item": po_item, "validation_status": "SKIPPED",
+                "miro_status": "SUCCESS", "message": f"Already posted as {prior_miro}",
+                "case": "full", "posted": True, "miro_number": prior_miro,
+                "skipped": True, "blocking_reason": "",
+                "invoice_qty": float(invoice_qty), "invoice_amount": float(invoice_amount),
+            })
+            continue
+
+        try:
+            resp = await sap_service.post_service_po_line(
+                po_number=po_number,
+                po_item=po_item,
+                invoice_qty=float(invoice_qty),
+                invoice_amount=float(invoice_amount),
+                company_code=company_code,
+            )
+        except Exception as exc:
+            # The call may or may not have posted before failing — say so plainly
+            # rather than guessing, and never retry it automatically.
+            all_posted = False
+            reason = (
+                f"Line {po_item}: SAP call failed — {exc}. "
+                "Check in SAP whether a MIRO was created before re-posting."
+            )
+            blocking_reasons.append(reason)
+            log.error("service PO line posting errored", po_item=po_item, error=str(exc))
+            results.append({
+                "po_item": po_item, "validation_status": "ERROR", "miro_status": "UNKNOWN",
+                "message": str(exc), "case": "rejected", "posted": False,
+                "miro_number": "", "blocking_reason": reason,
+                "invoice_qty": float(invoice_qty), "invoice_amount": float(invoice_amount),
+            })
+            continue
+
+        if resp.succeeded:
+            miro_numbers.append(resp.miro_number)
+        else:
+            all_posted = False
+            blocking_reasons.append(f"Line {po_item}: {resp.blocking_reason}")
+
+        results.append({
+            "po_item":           po_item,
+            "validation_status": resp.VALIDATION_STATUS or resp.STATUS,
+            "miro_status":       resp.MIRO_STATUS,
+            "message":           resp.message,
+            "case":              resp.consumption_case,
+            "posted":            resp.succeeded,
+            "miro_number":       resp.miro_number,
+            "fiscal_year":       resp.FISCAL_YEAR,
+            "invoice_qty":       resp.INVOICE_QTY,
+            "invoice_amount":    resp.INVOICE_AMOUNT,
+            "total_qty":         resp.TOTAL_QTY,
+            "total_net":         resp.TOTAL_NET,
+            "consumed_qty":      resp.CONSUMED_QTY,
+            "consumed_net":      resp.CONSUMED_NET,
+            "available_qty":     resp.AVAILABLE_QTY,
+            "available_net":     resp.AVAILABLE_NET,
+            "remaining_qty":     resp.remaining_qty,
+            "remaining_net":     resp.remaining_net,
+            "blocking_reason":   resp.blocking_reason,
+        })
+
+    if not results:
+        blocking_reasons.append("No line items were extracted from the invoice")
+        all_posted = False
+
+    cases = [r["case"] for r in results]
+    overall_case = (
+        "rejected" if "rejected" in cases
+        else "full"    if cases and all(c == "full" for c in cases)
+        else "partial" if cases
+        else "none"
+    )
+
+    log.info(
+        "service PO posting complete",
+        po_number=po_number,
+        line_count=len(results),
+        case=overall_case,
+        miro_numbers=miro_numbers,
+        all_posted=all_posted,
+    )
+
+    return {
+        "posted_at": datetime.now(UTC).isoformat(),
+        "lines": results,
+        "case": overall_case,
+        "blocking_reasons": blocking_reasons,
+        "miro_numbers": miro_numbers,
+        "miro_number": miro_numbers[0] if miro_numbers else "",
+        "all_posted": all_posted and len(results) > 0,
+    }
+
+
+async def validate_service_po_invoice(
+    extracted: dict[str, Any],
+    sap_po: SAPPOResponse,
+    po_number: str,
+) -> dict[str, Any]:
+    """Full Service PO validation — runs the header/vendor scoring plus all three
+    hard gates, and returns the standard validation result dict with `is_valid`
+    reflecting every gate.
+
+    `is_valid` is what the MIRO step keys off, so it is only ever True when the
+    SES exists, the invoice fits inside the PO line, and SAP confirms the amounts
+    are still available.
+
+    Scoring is deliberately *not* delegated to the material-PO validator: that one
+    compares invoice unit price against PO unit price and invoice gross against PO
+    gross, both of which legitimately differ on a partial service invoice (billing
+    4,000 against an 8,000 service line is normal, not a mismatch).
+    """
+    ses_check      = check_service_po_ses(sap_po, extracted)
+    ceiling_check  = check_service_po_ceilings(extracted, sap_po)
+
+    mismatches: list[dict[str, str]] = []
+
+    # ── Header scoring — vendor identity plus an amount *ceiling* check ───
+    inv_gstin = (extracted.get("vendor_gstin") or "").strip().upper()
+    sap_gstin = sap_po.VENDOR_GSTIN.strip().upper()
+    if inv_gstin and sap_gstin:
+        gstin_score = 1.0 if inv_gstin == sap_gstin else 0.0
+        if gstin_score == 0.0:
+            mismatches.append(_mismatch("vendor_gstin", inv_gstin, sap_gstin, "error"))
+    else:
+        gstin_score = 0.5   # nothing to compare — neither credit nor penalty
+
+    vendor_ratio = _ratio(extracted.get("vendor_name") or "", sap_po.VENDOR_NAME)
+    if vendor_ratio < 0.80:
+        mismatches.append(_mismatch("vendor_name", extracted.get("vendor_name") or "",
+                                    sap_po.VENDOR_NAME, "error" if vendor_ratio < 0.50 else "warning"))
+
+    # A partial invoice is expected to be *under* the PO gross — only an overrun matters.
+    inv_gross = _dec(extracted.get("gross_amount", "0"))
+    sap_gross = _dec(sap_po.GROSS_AMOUNT)
+    if inv_gross <= sap_gross + Decimal("0.01"):
+        amount_score = 1.0
+    else:
+        amount_score = 0.0
+        mismatches.append(_mismatch("gross_amount", str(inv_gross), str(sap_gross), "error"))
+
+    header_confidence = gstin_score * 0.30 + vendor_ratio * 0.30 + amount_score * 0.40
+
+    # ── Line and SES scoring come straight from the gates ─────────────────
+    ceiling_lines = ceiling_check["lines"]
+    line_confidence = (
+        sum(1 for line in ceiling_lines if line["within_po"]) / len(ceiling_lines)
+        if ceiling_lines else 0.0
+    )
+    ses_lines = ses_check["lines"]
+    gr_confidence = (
+        sum(1 for line in ses_lines if line["status"] == "complete") / len(ses_lines)
+        if ses_lines else 0.0
+    )
+    overall_confidence = header_confidence * 0.40 + line_confidence * 0.40 + gr_confidence * 0.20
+
+    result: dict[str, Any] = {
+        "fetched_at":           datetime.now(UTC).isoformat(),
+        "po_data":              sap_po.raw_response,
+        "header_confidence":    round(header_confidence, 4),
+        "line_item_confidence": round(line_confidence, 4),
+        "gr_confidence":        round(gr_confidence, 4),
+        "overall_confidence":   round(overall_confidence, 4),
+        "is_valid":             overall_confidence >= 0.70,
+    }
+
+    result["ses_validation"]        = ses_check
+    result["po_ceiling_validation"] = ceiling_check
+    result["gr_status"]             = ses_check["lines"]
+
+    # Surface gate failures as mismatches so the existing UI renders them.
+    for line_num in ses_check["missing_ses"]:
+        mismatches.append(_mismatch(f"line[{line_num}].ses", "MISSING", "SES_REQUIRED", "error"))
+    mismatches.extend(ceiling_check["violations"])
+    result["mismatches"] = mismatches
+
+    # Availability against prior invoices is *not* checked here: the only endpoint
+    # that reports it (ZSPO_VALD/SERV_PO_VAL) also posts the MIRO, so calling it
+    # during validation would post the invoice. SAP re-checks it at posting time.
+    gates = {
+        "ses_present":    ses_check["all_have_ses"],
+        "within_po_line": ceiling_check["all_within_po"],
+    }
+    result["gates"] = gates
+    all_gates_passed = all(gates.values())
+
+    result["is_valid"] = bool(result.get("is_valid", False)) and all_gates_passed
+
+    if not gates["ses_present"]:
+        result["recommendation"] = (
+            "No approved SES found for "
+            f"line(s) {', '.join(ses_check['missing_ses']) or '—'} — "
+            "the service must be confirmed in SAP before this invoice can be posted."
+        )
+    elif not gates["within_po_line"]:
+        result["recommendation"] = (
+            "Invoiced quantity/amount exceeds the PO line — do not post to SAP."
+        )
+    elif all_gates_passed and result["is_valid"]:
+        result["recommendation"] = (
+            "Service PO validated — ready to post. SAP performs the final availability "
+            "check and creates the MIRO in the same step."
+        )
+
+    log.info(
+        "service PO invoice validation complete",
+        po_number=po_number,
+        gates=gates,
+        is_valid=result["is_valid"],
+    )
+    return result

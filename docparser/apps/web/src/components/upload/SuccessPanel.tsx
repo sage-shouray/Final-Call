@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { CheckCircle2, Copy, ChevronDown, ChevronUp, ArrowLeft, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import type { MIROPosting, FB60Posting, ExtractedData } from '@/types';
+import type { MIROPosting, MIROParking, FB60Posting, ExtractedData } from '@/types';
 import { toINR } from '@/lib/currency';
 import { cn } from '@/lib/cn';
 
 // ─── Posting loading state ─────────────────────────────────────────────────────
 
-export function PostingLoading({ lineItemCount, target = 'MIRO' }: { lineItemCount: number; target?: string }) {
+export function PostingLoading({ lineItemCount, target = 'MIRO', action = 'Posting' }: { lineItemCount: number; target?: string; action?: 'Posting' | 'Parking' }) {
   return (
     <div className="flex flex-col items-center gap-6 py-14">
       <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
@@ -16,7 +16,7 @@ export function PostingLoading({ lineItemCount, target = 'MIRO' }: { lineItemCou
       </div>
       <div className="text-center">
         <p className="text-base font-semibold text-neutral-800 dark:text-neutral-200">
-          Posting {lineItemCount} line item{lineItemCount !== 1 ? 's' : ''} to {target}
+          {action} {lineItemCount} line item{lineItemCount !== 1 ? 's' : ''} to {target}
         </p>
         <p className="mt-1 text-sm text-neutral-400 dark:text-neutral-500">This usually takes a few seconds…</p>
       </div>
@@ -29,21 +29,24 @@ export function PostingLoading({ lineItemCount, target = 'MIRO' }: { lineItemCou
 interface SuccessPanelProps {
   miro?:     MIROPosting | null;
   fb60?:     FB60Posting | null;
+  parked?:   MIROParking | null;
   extracted: ExtractedData | null;
   onReset:   () => void;
 }
 
-export function SuccessPanel({ miro, fb60, extracted, onReset }: SuccessPanelProps) {
+export function SuccessPanel({ miro, fb60, parked, extracted, onReset }: SuccessPanelProps) {
   const navigate          = useNavigate();
   const [showPayload, setShowPayload] = useState(false);
   const [copied, setCopied]           = useState(false);
 
-  const isFb60   = !miro && !!fb60;
-  const docNumber = isFb60 ? (fb60?.fb60_number ?? '') : (miro?.miro_number ?? '');
-  const label     = isFb60 ? 'FB60 Document Number' : 'MIRO Transaction Number';
-  const subtitle  = isFb60 ? 'SAP FB60 entry has been created' : 'SAP MIRO entry has been created';
-  const copyLabel = isFb60 ? 'Copy FB60 number' : 'Copy MIRO number';
-  const payload   = JSON.stringify(isFb60 ? fb60?.payload_sent : miro?.payload_sent, null, 2);
+  const isFb60   = !miro && !parked && !!fb60;
+  const isParked = !miro && !fb60 && !!parked;
+  const docNumber = isFb60 ? (fb60?.fb60_number ?? '') : isParked ? (parked?.park_number ?? '') : (miro?.miro_number ?? '');
+  const label     = isFb60 ? 'FB60 Document Number' : isParked ? 'MIRO Park Document Number' : 'MIRO Transaction Number';
+  const subtitle  = isFb60 ? 'SAP FB60 entry has been created' : isParked ? 'SAP MIRO document has been parked — not yet posted' : 'SAP MIRO entry has been created';
+  const copyLabel = isFb60 ? 'Copy FB60 number' : isParked ? 'Copy park number' : 'Copy MIRO number';
+  const payload   = JSON.stringify(isFb60 ? fb60?.payload_sent : isParked ? parked?.payload_sent : miro?.payload_sent, null, 2);
+  const heading   = isParked ? 'Document parked successfully' : 'Document posted successfully';
 
   function copyNumber() {
     navigator.clipboard.writeText(docNumber).then(() => {
@@ -54,20 +57,20 @@ export function SuccessPanel({ miro, fb60, extracted, onReset }: SuccessPanelPro
 
   return (
     <div className="flex flex-col items-center gap-6 py-4">
-      {/* Green check */}
-      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
-        <CheckCircle2 className="h-9 w-9 text-green-600 dark:text-green-400" strokeWidth={2} />
+      {/* Status icon */}
+      <div className={cn('flex h-16 w-16 items-center justify-center rounded-full', isParked ? 'bg-indigo-100 dark:bg-indigo-900/40' : 'bg-green-100 dark:bg-green-900/40')}>
+        <CheckCircle2 className={cn('h-9 w-9', isParked ? 'text-indigo-600 dark:text-indigo-400' : 'text-green-600 dark:text-green-400')} strokeWidth={2} />
       </div>
 
       {/* Heading */}
       <div className="text-center">
-        <h2 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">Document posted successfully</h2>
+        <h2 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">{heading}</h2>
         <p className="mt-1 text-sm text-neutral-400 dark:text-neutral-500">{subtitle}</p>
       </div>
 
       {/* Document number */}
-      <div className="w-full max-w-sm rounded-xl border border-green-200 bg-green-50 px-6 py-5 text-center dark:border-green-900 dark:bg-green-950/30">
-        <p className="text-xs font-semibold uppercase tracking-widest text-green-600 dark:text-green-400">
+      <div className={cn('w-full max-w-sm rounded-xl border px-6 py-5 text-center', isParked ? 'border-indigo-200 bg-indigo-50 dark:border-indigo-900 dark:bg-indigo-950/30' : 'border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30')}>
+        <p className={cn('text-xs font-semibold uppercase tracking-widest', isParked ? 'text-indigo-600 dark:text-indigo-400' : 'text-green-600 dark:text-green-400')}>
           {label}
         </p>
         <p className="mt-2 font-mono text-3xl font-bold tracking-wider text-neutral-900 dark:text-neutral-100">

@@ -113,6 +113,14 @@ class DocumentRepository(BaseRepository[DocumentRow]):
         )
         return await self.update(id, {"miro_posting": posting_data, "status": new_status.value})
 
+    async def update_miro_parking(self, id: str, parking_data: dict[str, Any]) -> bool:
+        new_status = (
+            DocumentStatus.PARKED
+            if parking_data.get("status") == "success"
+            else DocumentStatus.VALIDATED
+        )
+        return await self.update(id, {"miro_parking": parking_data, "status": new_status.value})
+
     async def update_fb60_posting(self, id: str, posting_data: dict[str, Any]) -> bool:
         new_status = (
             DocumentStatus.POSTED
@@ -161,6 +169,7 @@ class DocumentRepository(BaseRepository[DocumentRow]):
             DocumentRow.extracted["gross_amount"].label("gross_amount"),
             DocumentRow.grn_posting["grn_number"].label("grn_number"),
             DocumentRow.miro_posting["miro_number"].label("miro_number"),
+            DocumentRow.miro_parking["park_number"].label("park_number"),
             DocumentRow.fb60_posting["fb60_number"].label("fb60_number"),
         )
 
@@ -198,6 +207,7 @@ class DocumentRepository(BaseRepository[DocumentRow]):
                 },
                 "grn_posting":  {"grn_number":  r["grn_number"]}  if r["grn_number"]  else None,
                 "miro_posting": {"miro_number": r["miro_number"]} if r["miro_number"] else None,
+                "miro_parking": {"park_number": r["park_number"]} if r["park_number"] else None,
                 "fb60_posting": {"fb60_number": r["fb60_number"]} if r["fb60_number"] else None,
             }
             for r in rows
@@ -231,6 +241,7 @@ class DocumentRepository(BaseRepository[DocumentRow]):
             DocumentRow.extracted["gross_amount"].label("gross_amount"),
             DocumentRow.grn_posting["grn_number"].label("grn_number"),
             DocumentRow.miro_posting["miro_number"].label("miro_number"),
+            DocumentRow.miro_parking["park_number"].label("park_number"),
             DocumentRow.fb60_posting["fb60_number"].label("fb60_number"),
         ).where(
             DocumentRow.document_id.ilike(pattern)
@@ -264,6 +275,7 @@ class DocumentRepository(BaseRepository[DocumentRow]):
                 },
                 "grn_posting":  {"grn_number":  r["grn_number"]}  if r["grn_number"]  else None,
                 "miro_posting": {"miro_number": r["miro_number"]} if r["miro_number"] else None,
+                "miro_parking": {"park_number": r["park_number"]} if r["park_number"] else None,
                 "fb60_posting": {"fb60_number": r["fb60_number"]} if r["fb60_number"] else None,
             }
             for r in rows

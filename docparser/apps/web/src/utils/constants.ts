@@ -46,6 +46,7 @@ export const STATUS_CONFIG: Record<DocumentStatus, StatusConfig> = {
   [DocumentStatus.SIMULATED]:  { label: 'Simulated',   badgeColor: 'success',  step: 5 },
   [DocumentStatus.POSTING]:    { label: 'Posting',     badgeColor: 'warning',  step: 8 },
   [DocumentStatus.POSTED]:     { label: 'Posted',      badgeColor: 'success',  step: 9 },
+  [DocumentStatus.PARKED]:     { label: 'Parked',      badgeColor: 'info',     step: 9 },
   [DocumentStatus.FAILED]:     { label: 'Failed',     badgeColor: 'error',    step: 0 },
 };
 

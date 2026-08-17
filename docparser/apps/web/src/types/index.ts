@@ -14,6 +14,7 @@ export enum DocumentStatus {
   SIMULATED   = 'simulated',
   POSTING     = 'posting',
   POSTED      = 'posted',
+  PARKED      = 'parked',
   FAILED      = 'failed',
 }
 
@@ -191,6 +192,58 @@ export interface GRStatusEntry {
   status:         'complete' | 'partial' | 'missing';
 }
 
+// ── Service PO ───────────────────────────────────────────────────────────────
+// 'full'     — the PO line's value is now fully consumed
+// 'partial'  — value remains on the line for a later invoice
+// 'rejected' — SAP refused it, or validation passed but the MIRO was not created
+export type ServicePOCase = 'full' | 'partial' | 'rejected';
+
+/** One line's outcome from ZSPO_VALD/SERV_PO_VAL, which validates *and* posts. */
+export interface ServicePOLineCheck {
+  po_item:           string;
+  validation_status: string;
+  miro_status:       string;
+  message:           string;
+  case:              ServicePOCase;
+  posted:            boolean;
+  miro_number:       string;
+  fiscal_year?:      number;
+  /** True when a retry skipped this line because it was already posted. */
+  skipped?:          boolean;
+  invoice_qty:       number;
+  invoice_amount:    number;
+  total_qty:         number;
+  total_net:         number;
+  consumed_qty:      number;
+  consumed_net:      number;
+  available_qty:     number;
+  available_net:     number;
+  remaining_qty:     number;
+  remaining_net:     number;
+  blocking_reason:   string;
+}
+
+/** Result of the Service PO posting step — lives on miro_posting.sap_response. */
+export interface ServicePOPosting {
+  posted_at:        string;
+  lines:            ServicePOLineCheck[];
+  case:             ServicePOCase | 'none';
+  blocking_reasons: string[];
+  miro_numbers:     string[];
+  miro_number:      string;
+  all_posted:       boolean;
+}
+
+/**
+ * Gates checked at validation time. Availability against prior invoices is NOT
+ * among them: the only endpoint reporting it also posts the MIRO, so SAP performs
+ * that check during posting instead.
+ */
+export interface ServicePOGates {
+  ses_present:    boolean;
+  within_po_line: boolean;
+}
+
 export interface SAPValidation {
   fetched_at:          string;
   po_data:             Record<string, unknown>;
@@ -202,6 +255,8 @@ export interface SAPValidation {
   gr_status:           GRStatusEntry[];
   is_valid:            boolean;
   recommendation:      string;
+  // Service PO only
+  gates?: ServicePOGates;
 }
 
 export interface GRNPosting {
@@ -293,6 +348,15 @@ export interface MIROPosting {
   status:       'success' | 'failed';
 }
 
+export interface MIROParking {
+  parked_at:    string;
+  payload_sent: Record<string, unknown>;
+  park_number:  string;
+  sap_response: Record<string, unknown>;
+  message:      string;
+  status:       'success' | 'failed';
+}
+
 export interface ErrorEntry {
   timestamp: string;
   stage:     string;
@@ -321,6 +385,7 @@ export interface Document {
   sap_validation: SAPValidation | null;
   grn_posting:    GRNPosting | null;
   miro_posting:   MIROPosting | null;
+  miro_parking:   MIROParking | null;
   fb60_posting:   FB60Posting | null;
   so_simulation:  Record<string, unknown> | null;
   so_posting:     Record<string, unknown> | null;
@@ -344,6 +409,7 @@ export interface DocumentListItem {
   invoice_subtype:  string;
   grn_number:       string;
   miro_number:      string;
+  park_number:      string;
   fb60_number:      string;
   confidence_score?: number | undefined;
   uploaded_by?:     string | undefined;

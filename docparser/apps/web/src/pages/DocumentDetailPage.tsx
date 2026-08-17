@@ -13,11 +13,12 @@ import { TCodeChip }     from '@/components/ui/TCodeChip';
 import { Badge }         from '@/components/ui/Badge';
 import { Skeleton }      from '@/components/ui/Skeleton';
 import { Topbar }        from '@/components/layout/Topbar';
+import { ServicePOSection } from '@/components/upload/ValidationPanel';
 import { formatDateTime, formatDate } from '@/lib/dates';
 import { toINR }          from '@/lib/currency';
 import { cn }             from '@/lib/cn';
 import api from '@/lib/api';
-import { DocumentStatus, type Document } from '@/types';
+import { DocumentStatus, type Document, type ServicePOPosting } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -218,6 +219,8 @@ function getTimeline(doc: Document): TimelineStep[] {
 
   // ── Material PO (MIRO) flow ───────────────────────────────────────────────
   const miro = doc.miro_posting as { miro_number?: string; posted_at?: string; status?: string } | null;
+  const park = doc.miro_parking as { park_number?: string; parked_at?: string; status?: string; message?: string } | null;
+  const isParkedCase = park?.status === 'success' || status === DocumentStatus.PARKED;
   return [
     step0,
     step1,
@@ -236,14 +239,16 @@ function getTimeline(doc: Document): TimelineStep[] {
     },
     {
       key:         'posted',
-      label:       'MIRO Invoice Posting',
+      label:       isParkedCase ? 'MIRO Invoice Parked' : 'MIRO Invoice Posting',
       description: miro?.status === 'success'
         ? `MIRO: ${miro.miro_number}`
-        : status === DocumentStatus.POSTING
-          ? 'Posting to SAP MIRO…'
-          : 'Pending',
-      timestamp:   miro?.posted_at ?? null,
-      done:        miro?.status === 'success',
+        : isParkedCase
+          ? `Park No: ${park?.park_number || '—'}`
+          : status === DocumentStatus.POSTING
+            ? 'Posting to SAP MIRO…'
+            : 'Pending',
+      timestamp:   miro?.posted_at ?? park?.parked_at ?? null,
+      done:        miro?.status === 'success' || isParkedCase,
       active:      status === DocumentStatus.POSTING,
       failed:      miro?.status === 'failed',
     },
@@ -403,12 +408,14 @@ function SummaryStrip({ doc }: { doc: Document }) {
   const fb60      = doc.fb60_posting  as { fb60_number?: string; status?: string } | null;
   const grn       = doc.grn_posting   as { grn_number?: string; status?: string } | null;
   const miro      = doc.miro_posting  as { miro_number?: string; status?: string } | null;
+  const park      = doc.miro_parking  as { park_number?: string; status?: string } | null;
 
   const sapRef = isNonPO
     ? fb60?.fb60_number   ? { label: 'FB60 No.',  value: fb60.fb60_number,   color: 'text-indigo-700 dark:text-indigo-400' } : null
     : isMigo
       ? grn?.grn_number   ? { label: 'GRN No.',   value: grn.grn_number,    color: 'text-teal-700 dark:text-teal-400'   } : null
-      : miro?.miro_number ? { label: 'MIRO No.',  value: miro.miro_number,  color: 'text-green-700 dark:text-green-400'  } : null;
+      : miro?.miro_number ? { label: 'MIRO No.',  value: miro.miro_number,  color: 'text-green-700 dark:text-green-400'  }
+        : park?.status === 'success' ? { label: 'Park No.', value: park.park_number || '—', color: 'text-indigo-700 dark:text-indigo-400' } : null;
 
   return (
     <div className="grid grid-cols-1 gap-px rounded-xl border border-neutral-200 bg-neutral-200 overflow-hidden sm:grid-cols-3 dark:border-neutral-800 dark:bg-neutral-800">
@@ -534,6 +541,7 @@ export default function DocumentDetailPage() {
   const validation = doc.sap_validation;
   const grn        = doc.grn_posting;
   const miro       = doc.miro_posting;
+  const park       = doc.miro_parking;
   const status     = doc.status as DocumentStatus;
   const isMigo      = doc.tcode === 'MIGO' || doc.type === 'goods_receipt';
   const isNonPO     = doc.tcode === 'FB60' || doc.invoice_subtype === 'non_po' || !!doc.fb60_posting;
@@ -735,6 +743,16 @@ export default function DocumentDetailPage() {
                   <Row label="GR coverage"      value={`${Math.round(validation.gr_confidence * 100)}%`} />
                   <Row label="Recommendation"   value={validation.recommendation ?? '—'} />
                 </div>
+
+                {/* Service PO gates + per-line availability — same view as the upload flow */}
+                {isServicePO && (
+                  <div className="mb-4">
+                    <ServicePOSection
+                      validation={validation}
+                      posting={(miro?.sap_response as ServicePOPosting | undefined) ?? null}
+                    />
+                  </div>
+                )}
 
                 {validation.mismatches.length > 0 && (
                   <div>
@@ -962,6 +980,47 @@ export default function DocumentDetailPage() {
                     {Array.isArray(miro.sap_response.MESSAGE)
                       ? (miro.sap_response.MESSAGE as { MSG?: string }[]).map((m) => m.MSG ?? '').join(' | ')
                       : String(miro.sap_response.MESSAGE)}
+                  </p>
+                ) : null}
+              </div>
+            )}
+
+            {/* MIRO Park result */}
+            {park && (
+              <div className={cn(
+                'rounded-xl border p-5',
+                park.status === 'success' ? 'border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/30' : 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30',
+              )}>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className={cn(
+                    'flex h-9 w-9 items-center justify-center rounded-full',
+                    park.status === 'success' ? 'bg-indigo-100 dark:bg-indigo-900' : 'bg-red-100 dark:bg-red-900',
+                  )}>
+                    {park.status === 'success'
+                      ? <CheckCircle2 className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                      : <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />}
+                  </div>
+                  <div>
+                    <p className={cn('text-sm font-semibold', park.status === 'success' ? 'text-indigo-900 dark:text-indigo-300' : 'text-red-900 dark:text-red-300')}>
+                      {park.status === 'success' ? 'Parked in SAP MIRO — not yet posted' : 'MIRO Parking Failed'}
+                    </p>
+                    <p className={cn('text-xs', park.status === 'success' ? 'text-indigo-600 dark:text-indigo-400' : 'text-red-500 dark:text-red-400')}>
+                      {formatDateTime(park.parked_at)}
+                    </p>
+                  </div>
+                  {park.park_number && (
+                    <div className="ml-auto text-right">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-indigo-500 dark:text-indigo-400">Park Number</p>
+                      <p className="font-mono text-lg font-bold tracking-wide text-indigo-900 dark:text-indigo-300">{park.park_number}</p>
+                    </div>
+                  )}
+                </div>
+                <Badge variant={park.status === 'success' ? 'info' : 'error'} dot className="text-xs">
+                  {park.status === 'success' ? 'Parked' : 'Failed'}
+                </Badge>
+                {park.message ? (
+                  <p className="mt-2 text-xs text-neutral-600 break-words dark:text-neutral-400">
+                    {park.message}
                   </p>
                 ) : null}
               </div>

@@ -102,6 +102,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await _conn.execute(text(
                 "ALTER TABLE audit_logs ALTER COLUMN document_id DROP NOT NULL"
             ))
+            await _conn.execute(text(
+                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS miro_parking JSONB"
+            ))
         log.info("Schema migrations applied")
     except Exception as exc:
         log.warning("Schema migration failed (non-fatal)", error=str(exc))

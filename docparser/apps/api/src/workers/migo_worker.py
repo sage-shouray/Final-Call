@@ -45,7 +45,7 @@ async def run_migo_direct(document_id: str, posted_by: str = "system") -> None:
             bound_log.info("GRN response received", grn_number=grn_resp.grn_number, success=grn_resp.success)
 
             grn_posting_data = {
-                "posted_at":    datetime.now(UTC),
+                "posted_at":    datetime.now(UTC).isoformat(),
                 "payload_sent": grn_payload.model_dump(),
                 "grn_number":   grn_resp.grn_number,
                 "sap_response": grn_resp.sap_response,
