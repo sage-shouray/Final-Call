@@ -1,5 +1,6 @@
 """Application configuration via pydantic-settings."""
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import (
@@ -13,8 +14,19 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    # Both env files are real: docker-compose feeds the repo-root .env, while
+    # local runs use apps/api/.env. A bare ".env" resolves against the *working
+    # directory*, so the same command loaded different config (different
+    # JWT_SECRET, different GEMINI_MODEL) depending on where it was launched
+    # from — which silently served stale settings and was mistaken for code
+    # changes breaking OCR. Both paths are now anchored to this file's location,
+    # so the result no longer depends on cwd. Later files win, so apps/api/.env
+    # keeps overriding the root for local development.
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(
+            Path(__file__).resolve().parents[3] / ".env",   # docparser/.env  (docker)
+            Path(__file__).resolve().parents[1] / ".env",   # apps/api/.env   (local)
+        ),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
@@ -73,10 +85,41 @@ class Settings(BaseSettings):
     # Fallback company code for SAP calls that require one (Service PO validation)
     # when the PO response doesn't carry a COM_CODE of its own.
     SAP_COMPANY_CODE: str = "SSDN"
+    # Leading digits of a SAP PO number, used by the fast identity scrape to
+    # recognise a PO on the page. Comma-separated; 45 = standard PO.
+    SAP_PO_PREFIXES: str = "45,44"
+
+    # ── Ingest pipeline ───────────────────────────────────────────────────
+    # Run the fast identity + SAP routing pass alongside OCR on upload.
+    PIPELINE_ENABLED: bool = True
+    # Hard ceiling on the routing PO lookup, bounding the shared SAP client's
+    # exponential-retry backoff: routing has a graceful "SAP unavailable, retry
+    # later" path, so it must not stall indefinitely against a dead server.
+    # Warm SAP answers in 0.4-0.9 s, but the first call after an idle period
+    # costs ~14 s while it wakes up. Routing runs concurrently with the ~17 s OCR
+    # pass, so a generous ceiling is free — it only ever delays the outage path,
+    # which still finishes before extraction does.
+    PIPELINE_SAP_TIMEOUT_SECONDS: Annotated[int, Field(ge=1, le=60)] = 20
+    # Routing decides the invoice subtype — there is no manual picker. SAP is
+    # authoritative: it reports the line type (ZSER = service) and whether the
+    # GR/SES exists, so the user is never asked to classify the document.
+    # Set False only to fall back to a user-supplied subtype for debugging.
+    PIPELINE_ROUTING_AUTHORITATIVE: bool = True
+
+    # ── Auto-posting ──────────────────────────────────────────────────────
+    # Off by default: posting to SAP is irreversible, so removing the human
+    # approval step is a financial-control decision, not a technical one.
+    AUTO_POST_ENABLED: bool = False
+    AUTO_POST_MIN_CONFIDENCE: Annotated[float, Field(ge=0.0, le=1.0)] = 0.85
+    # Invoices above this value always require approval. 0 disables the ceiling.
+    AUTO_POST_MAX_AMOUNT: float = 100_000.0
 
     # ── Google AI (Gemini) ────────────────────────────────────────────────
     GEMINI_API_KEY: SecretStr = Field(default="")
-    GEMINI_MODEL: str = "gemini-flash-latest"
+    # Pinned rather than a "-latest" alias: the alias resolves to whatever model
+    # is busiest and was returning sustained 503s on PDF payloads while pinned
+    # models served the same request fine.
+    GEMINI_MODEL: str = "gemini-3.5-flash"
 
     # ── Storage (S3-compatible) ───────────────────────────────────────────
     S3_BUCKET: str = "docparser-uploads"
