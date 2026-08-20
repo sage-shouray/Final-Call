@@ -79,5 +79,10 @@ docker/volumes/
 logs/
 
 # ── Uploads (dev) ────────────────────────────────────────────
+# Uploaded customer documents — never commit. The previous rule missed the
+# real path (apps/api/src/uploads/), which is how 200+ vendor invoices
+# containing GSTINs and bank details ended up tracked.
 apps/api/uploads/
 apps/api/.uploads/
+apps/api/src/uploads/
+**/src/uploads/
