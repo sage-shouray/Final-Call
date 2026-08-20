@@ -189,15 +189,17 @@ async def upload_document(
         log.warning("Redis stream publish failed", error=str(exc), document_id=document_id)
 
     import asyncio as _asyncio
-    from src.workers.ocr_worker import run_extraction_direct
+    from src.workers.pipeline_worker import run_pipeline
 
     async def _ocr_with_logging() -> None:
+        # Runs the fast identity + SAP routing track alongside OCR; falls back to
+        # OCR alone if the pipeline is disabled or the fast track cannot run.
         try:
-            await run_extraction_direct(document_id)
+            await run_pipeline(document_id)
         except Exception as exc:
-            log.error("OCR background task crashed", document_id=document_id, error=str(exc), exc_info=True)
+            log.error("ingest pipeline crashed", document_id=document_id, error=str(exc), exc_info=True)
 
-    _asyncio.create_task(_ocr_with_logging(), name=f"ocr-{document_id}")
+    _asyncio.create_task(_ocr_with_logging(), name=f"pipeline-{document_id}")
     _asyncio.create_task(_write_doc_audit(
         action="document.uploaded",
         document_id=document_id,
@@ -305,6 +307,7 @@ async def get_document(document_id: str, current_user: CurrentUser) -> DocumentR
         uploaded_at=safe["uploaded_at"],
         file=safe["file"],
         extracted=safe.get("extracted"),
+        pipeline=safe.get("pipeline"),
         sap_validation=safe.get("sap_validation"),
         grn_posting=safe.get("grn_posting"),
         miro_posting=safe.get("miro_posting"),
@@ -613,6 +616,170 @@ async def park_miro(
     return MIROParkTriggerResponse(document_id=document_id, status="posting", message="MIRO parking started.")
 
     return MIROTriggerResponse(document_id=document_id, status="posting", message="MIRO posting started.")
+
+
+# ---------------------------------------------------------------------------
+# POST /api/documents/{document_id}/reroute
+#
+# Re-runs routing with a corrected PO number. Routing is read-only against SAP,
+# so this is safe to repeat — unlike /process, which posts.
+#
+# Exists because the commonest hold is a PO number the document scan got wrong
+# or that was mistyped on the invoice; without this the only remedy was to fix
+# the PDF and upload it again.
+# ---------------------------------------------------------------------------
+
+@router.post("/{document_id}/reroute", status_code=200)
+async def reroute_document(
+    document_id: str,
+    body: dict,
+    current_user: CurrentUser,
+) -> dict[str, Any]:
+    po_number = str(body.get("po_number") or "").strip()
+    if not po_number:
+        raise ValidationError("A PO number is required.", error_code="MISSING_PO_NUMBER")
+
+    async with AsyncSessionLocal() as session:
+        repo = DocumentRepository(session)
+        doc = await repo.find_by_document_id(document_id)
+        if not doc:
+            raise NotFoundError(f"Document '{document_id}' not found", error_code="DOCUMENT_NOT_FOUND")
+        _assert_tenant(doc, current_user)
+
+        if (doc.get("miro_posting") or {}).get("status") == "success":
+            raise ValidationError(
+                "This document has already been posted and cannot be re-routed.",
+                error_code="ALREADY_POSTED",
+            )
+
+        from src.services.routing_service import classify
+        routing = await classify([po_number])
+
+        pipeline = dict(doc.get("pipeline") or {})
+        pipeline["routing"] = routing
+        pipeline["po_number_corrected_by"] = current_user.sub
+
+        updates: dict[str, Any] = {"pipeline": pipeline}
+
+        # Keep the extracted PO number in step with the correction, otherwise the
+        # posting step would still use the number that failed.
+        extracted = dict(doc.get("extracted") or {})
+        if extracted:
+            extracted["po_number"] = routing.get("po_number") or po_number
+            updates["extracted"] = extracted
+
+        if routing.get("invoice_subtype"):
+            updates["invoice_subtype"] = routing["invoice_subtype"]
+        if routing.get("tcode"):
+            updates["tcode"] = routing["tcode"]
+
+        # A corrected PO invalidates any validation done against the old one.
+        updates["sap_validation"] = None
+
+        await repo.update(doc["id"], updates)
+        await session.commit()
+
+    await _write_doc_audit(
+        action="document.reroute",
+        document_id=document_id,
+        performed_by=current_user.sub,
+        details={"po_number": po_number, "route": routing.get("route")},
+    )
+
+    return {
+        "document_id": document_id,
+        "po_number":   po_number,
+        "route":       routing.get("route"),
+        "resolved":    routing.get("resolved"),
+        "reason":      routing.get("reason"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /api/documents/{document_id}/process
+#
+# Executes whatever route SAP chose for this document, in one action:
+#   miro_direct     -> validate, then post the invoice
+#   migo_then_miro  -> post the goods receipt, then validate, then the invoice
+#   fb60 / hold     -> refused, with the reason
+#
+# This is what removes "MIGO or MIRO?" as a decision the user has to make.
+# ---------------------------------------------------------------------------
+
+@router.post("/{document_id}/process", status_code=202)
+async def process_document(
+    document_id: str,
+    current_user: CurrentUser,
+    _role: Annotated[Any, require_role("manager", "admin")] = None,
+) -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        doc = await DocumentRepository(session).find_by_document_id(document_id)
+    if not doc:
+        raise NotFoundError(f"Document '{document_id}' not found", error_code="DOCUMENT_NOT_FOUND")
+    _assert_tenant(doc, current_user)
+
+    current_status = doc.get("status", "")
+    if current_status in {DocumentStatus.POSTING, DocumentStatus.GR_POSTING}:
+        raise ValidationError("Processing is already in progress", error_code="ALREADY_POSTING")
+
+    routing = (doc.get("pipeline") or {}).get("routing") or {}
+    route = routing.get("route") or ""
+
+    # Refuse the non-executable routes here, synchronously, so the caller gets a
+    # reason instead of a background task that quietly does nothing.
+    from src.workers.process_worker import ProcessBlocked, run_process_direct
+    from src.services.routing_service import Route
+    if not route:
+        raise ValidationError(
+            "This document has not been routed yet.", error_code="NOT_ROUTED"
+        )
+    if route == Route.HOLD.value:
+        raise ValidationError(
+            routing.get("reason") or "This document needs attention before it can be posted.",
+            error_code="ROUTE_HOLD",
+        )
+    if route == Route.FB60.value:
+        raise ValidationError(
+            "Non-PO invoice — complete the FB60 form to post it.",
+            error_code="FB60_FORM_REQUIRED",
+        )
+
+    # The worker refuses an already-posted document too, but only into the log —
+    # the caller would otherwise be told "processing" for work that will not run.
+    miro = doc.get("miro_posting") or {}
+    if miro.get("status") == "success" and miro.get("miro_number"):
+        raise ValidationError(
+            f"Already posted as MIRO {miro['miro_number']}.",
+            error_code="ALREADY_POSTED",
+        )
+
+    import asyncio as _asyncio
+
+    async def _run() -> None:
+        try:
+            await run_process_direct(document_id, current_user.sub)
+        except ProcessBlocked as exc:
+            log.warning("route execution blocked", document_id=document_id, reason=exc.reason)
+        except Exception as exc:
+            log.error("route execution failed", document_id=document_id, error=str(exc))
+
+    _asyncio.create_task(_run(), name=f"process-{document_id}")
+    _asyncio.create_task(_write_doc_audit(
+        action="document.process",
+        document_id=document_id,
+        performed_by=current_user.sub,
+        details={"route": route},
+    ))
+
+    return {
+        "document_id": document_id,
+        "route":       route,
+        "status":      "processing",
+        "message":     (
+            "Posting goods receipt, then invoice." if route == Route.MIGO_THEN_MIRO.value
+            else "Posting invoice."
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------
