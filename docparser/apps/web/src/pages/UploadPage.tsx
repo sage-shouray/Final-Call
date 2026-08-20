@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { useDocumentStore }    from '@/store/documentStore';
@@ -11,6 +11,7 @@ import { DocTypePicker }   from '@/components/upload/DocTypePicker';
 import { FileDropzone }    from '@/components/upload/FileDropzone';
 import { Skeleton }        from '@/components/ui/Skeleton';
 import { ExtractedDataForm } from '@/components/upload/ExtractedDataForm';
+import { PipelineRail } from '@/components/upload/PipelineRail';
 import { NonPOInvoiceForm }  from '@/components/upload/NonPOInvoiceForm';
 import { SalesOrderForm }    from '@/components/upload/SalesOrderForm';
 import { ValidationPanel, ValidationLoading } from '@/components/upload/ValidationPanel';
@@ -246,6 +247,10 @@ export default function UploadPage() {
         const resp = await api.get<Document>(`/documents/${state.documentId}`);
         const doc  = resp.data;
         const s    = doc.status as DocumentStatus;
+        // Keep the document fresh on every tick, not only on a status change:
+        // routing resolves ~1 s in while the status is still "extracting", and
+        // the pipeline rail needs that as it lands rather than 17 s later.
+        setState((prev) => ({ ...prev, document: doc }));
         if (s === DocumentStatus.EXTRACTED && state.step === 'extracting') {
           clearInterval(pollRef.current);
           setState((prev) => ({ ...prev, step: 'extracted', document: doc, editedData: doc.extracted ?? null }));
@@ -465,9 +470,12 @@ export default function UploadPage() {
   const isSalesOrder  = state.selectedType === DocumentType.SALES_ORDER;
   const isCreditNote  = state.selectedType === DocumentType.CREDIT_NOTE;
   const isPaymentAdvice = state.selectedType === DocumentType.PAYMENT_ADVICE;
-  const isNonPO       = isVendorInv && state.invoiceSubtype === InvoiceSubtype.NON_PO;
-  const isServicePO   = isVendorInv && state.invoiceSubtype === InvoiceSubtype.SERVICE_PO;
-  const needsSubtype  = isVendorInv && state.invoiceSubtype === null;
+  // Vendor invoices are no longer classified by the user — the subtype is decided
+  // server-side from SAP and arrives on the document, so read it from there and
+  // fall back to local state only for the types that are still picked (freight).
+  const resolvedSubtype = (doc?.invoice_subtype as InvoiceSubtype | undefined) ?? state.invoiceSubtype;
+  const isNonPO       = isVendorInv && resolvedSubtype === InvoiceSubtype.NON_PO;
+  const isServicePO   = isVendorInv && resolvedSubtype === InvoiceSubtype.SERVICE_PO;
 
   return (
     <>
@@ -503,75 +511,31 @@ export default function UploadPage() {
               />
             </div>
 
-            {/* Invoice sub-type selector — only for Vendor Invoice (not Freight Invoice, which auto-routes) */}
+            {/* Vendor invoices are classified automatically — the system reads the
+                PO number off the document and asks SAP whether it is a Material PO,
+                a Service PO, or no PO at all, plus whether the GR/SES is done.
+                Nothing to pick. */}
             {isVendorInv && (
-              <div className="rounded-xl border border-neutral-200 bg-white p-5 space-y-4 dark:border-neutral-700 dark:bg-neutral-900">
-                <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Invoice Type</h2>
-
-                {/* Level 1: PO / Non-PO */}
-                <div className="grid grid-cols-2 gap-3">
-                  {([
-                    { value: 'po'     as const, label: 'PO Invoice',     desc: 'Invoice linked to a Purchase Order' },
-                    { value: 'non_po' as const, label: 'Non-PO Invoice', desc: 'Direct GL posting — no Purchase Order' },
-                  ]).map(opt => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setState(s => ({
-                        ...s,
-                        parentInvoiceType: opt.value,
-                        invoiceSubtype: opt.value === 'non_po' ? InvoiceSubtype.NON_PO : null,
-                      }))}
-                      className={`rounded-xl border-2 p-4 text-left transition-all ${
-                        state.parentInvoiceType === opt.value
-                          ? 'border-primary-500 bg-primary-50 dark:bg-indigo-950/50 dark:border-indigo-500'
-                          : 'border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:border-neutral-500'
-                      }`}
-                    >
-                      <p className={`text-sm font-semibold ${state.parentInvoiceType === opt.value ? 'text-primary-700 dark:text-indigo-300' : 'text-neutral-800 dark:text-neutral-200'}`}>
-                        {opt.label}
-                      </p>
-                      <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{opt.desc}</p>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Level 2: Material PO / Service PO — only when PO selected */}
-                {state.parentInvoiceType === 'po' && (
+              <div className="rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-700 dark:bg-neutral-900">
+                <div className="flex items-start gap-3">
+                  <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary-500" />
                   <div>
-                    <p className="mb-2 text-xs text-neutral-500 font-medium dark:text-neutral-400">Select PO type:</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      {([
-                        { value: InvoiceSubtype.PO,         label: 'Material PO', desc: 'Physical goods — GR (MIGO) then invoice (MIRO)' },
-                        { value: InvoiceSubtype.SERVICE_PO,  label: 'Service PO',  desc: 'Services — validate SES then invoice (MIRO)' },
-                      ] as const).map(opt => (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => setState(s => ({ ...s, invoiceSubtype: opt.value }))}
-                          className={`rounded-xl border-2 p-4 text-left transition-all ${
-                            state.invoiceSubtype === opt.value
-                              ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/50 dark:border-indigo-500'
-                              : 'border-neutral-200 bg-white hover:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:border-neutral-500'
-                          }`}
-                        >
-                          <p className={`text-sm font-semibold ${state.invoiceSubtype === opt.value ? 'text-indigo-700 dark:text-indigo-300' : 'text-neutral-800 dark:text-neutral-200'}`}>
-                            {opt.label}
-                          </p>
-                          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{opt.desc}</p>
-                        </button>
-                      ))}
-                    </div>
+                    <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
+                      Invoice type detected automatically
+                    </h2>
+                    <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                      We read the PO number from the invoice and ask SAP what it is —
+                      Material PO, Service PO or Non-PO — and whether the goods receipt
+                      or service entry sheet is already posted. Usually under a second.
+                    </p>
                   </div>
-                )}
+                </div>
               </div>
             )}
 
-            <div className={`rounded-xl border border-neutral-200 bg-white p-5 space-y-3 dark:border-neutral-700 dark:bg-neutral-900 ${needsSubtype ? 'opacity-40 pointer-events-none' : ''}`}>
+
+            <div className="rounded-xl border border-neutral-200 bg-white p-5 space-y-3 dark:border-neutral-700 dark:bg-neutral-900">
               <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Upload File</h2>
-              {needsSubtype && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">Please select an invoice type above first.</p>
-              )}
               <FileDropzone
                 file={state.file}
                 progress={uploadProgress}
@@ -586,10 +550,16 @@ export default function UploadPage() {
 
         {/* ── Step 2: Extracting ─────────────────────────────────────────── */}
         {state.step === 'extracting' && state.file && (
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto grid max-w-5xl gap-5 lg:grid-cols-[1fr_340px]">
             <ExtractionSkeleton
               fileName={state.file.name}
               fileSize={state.file.size}
+            />
+            {/* Routing settles about a second in, so this fills while the
+                skeleton on the left is still waiting on OCR. */}
+            <PipelineRail
+              pipeline={doc?.pipeline}
+              extracted={Boolean(doc?.extracted)}
             />
           </div>
         )}
