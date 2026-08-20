@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, Users, Globe, IndianRupee, FileText,
-  Plus, Edit2, Check, X, TestTube2, CheckCircle2, XCircle,
+  ArrowLeft, Edit2, Check, X, TestTube2, CheckCircle2, XCircle,
   Save, UserPlus, Trash2, KeyRound, Circle,
 } from 'lucide-react';
 

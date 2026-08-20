@@ -23,7 +23,11 @@ python-multipart>=0.0.7
 pillow>=10.2.0
 aiofiles>=23.2.1
 pdf2image>=1.17.0
-pymupdf>=1.24.0
+# Page-1 text-layer read for the fast identity scrape. BSD-licensed.
+# NOT PyMuPDF: that is AGPL-3.0, and its network clause would oblige us to
+# publish this application's source to anyone using the hosted service.
+# Nothing imports fitz/PyMuPDF — it was declared here but unused.
+pypdf>=5.0.0
 
 # HTTP client
 aiohttp>=3.9.1

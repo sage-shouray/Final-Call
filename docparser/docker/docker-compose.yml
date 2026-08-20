@@ -1,25 +1,22 @@
-version: "3.9"
-
 services:
   # ---------------------------------------------------------------------------
-  # MongoDB
+  # PostgreSQL
   # ---------------------------------------------------------------------------
-  mongodb:
-    image: mongo:7.0
+  postgres:
+    image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-changeme}
-      MONGO_INITDB_DATABASE: docparser
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-docparser}
     volumes:
-      - mongo_data:/data/db
-      - mongo_config:/data/configdb
+      - postgres_data:/var/lib/postgresql/data
     ports:
-      - "27017:27017"
+      - "5432:5432"
     networks:
       - docparser_net
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-docparser}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -57,7 +54,7 @@ services:
     environment:
       ENV: production
     depends_on:
-      mongodb:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -84,7 +81,7 @@ services:
     env_file:
       - ../.env
     depends_on:
-      mongodb:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -126,6 +123,5 @@ networks:
     driver: bridge
 
 volumes:
-  mongo_data:
-  mongo_config:
+  postgres_data:
   redis_data:

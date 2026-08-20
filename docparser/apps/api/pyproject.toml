@@ -11,22 +11,35 @@ dependencies = [
     # Web framework
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
-    # Database
-    "motor>=3.3.2",
-    "pymongo>=4.6.1",
+    # Database — PostgreSQL via SQLAlchemy 2.x async + asyncpg driver.
+    # (MongoDB/motor was removed: the app moved to PostgreSQL and nothing
+    # imports motor or pymongo any more.)
+    "sqlalchemy[asyncio]>=2.0.25",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.0",
+    # Sync driver — Alembic migrations run through psycopg2, not asyncpg.
+    "psycopg2-binary>=2.9.9",
     # Data validation
     "pydantic[email]>=2.5.3",
     "pydantic-settings>=2.1.0",
     # Auth
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
+    # Pinned below 5.0: passlib 1.7.x reads bcrypt.__about__, removed in bcrypt 5.
+    "bcrypt>=3.2.0,<5.0.0",
     # File handling
     "python-multipart>=0.0.7",
     "pillow>=10.2.0",
     "aiofiles>=23.2.1",
     "pdf2image>=1.17.0",
-    # HTTP client
+    # Page-1 text-layer read for the fast identity scrape. BSD-licensed —
+    # deliberately not PyMuPDF, which is AGPL and would oblige us to publish
+    # this application's source to anyone using the hosted service.
+    "pypdf>=5.0.0",
+    # HTTP clients — aiohttp for OCR/GET calls, httpx for the SAP POST paths.
+    # httpx was previously dev-only, so a production install could not post to SAP.
     "aiohttp>=3.9.1",
+    "httpx>=0.26.0",
     # Async S3
     "aioboto3>=12.3.0",
     # Task queue
