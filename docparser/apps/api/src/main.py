@@ -105,6 +105,62 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await _conn.execute(text(
                 "ALTER TABLE documents ADD COLUMN IF NOT EXISTS miro_parking JSONB"
             ))
+            await _conn.execute(text(
+                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source VARCHAR NOT NULL DEFAULT 'web'"
+            ))
+            await _conn.execute(text(
+                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_reference VARCHAR NOT NULL DEFAULT ''"
+            ))
+            await _conn.execute(text(
+                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_metadata JSONB NOT NULL DEFAULT '{}'::jsonb"
+            ))
+            await _conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS tenant_mailboxes (
+                    id VARCHAR PRIMARY KEY,
+                    tenant_id VARCHAR NOT NULL,
+                    provider VARCHAR NOT NULL DEFAULT 'imap',
+                    label VARCHAR NOT NULL DEFAULT '',
+                    address VARCHAR NOT NULL DEFAULT '',
+                    credentials_enc TEXT NOT NULL DEFAULT '',
+                    folder VARCHAR NOT NULL DEFAULT 'INBOX',
+                    poll_interval_s INTEGER NOT NULL DEFAULT 60,
+                    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                    sender_allowlist JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    auto_post_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                    last_polled_at TIMESTAMPTZ,
+                    last_success_at TIMESTAMPTZ,
+                    last_error TEXT NOT NULL DEFAULT '',
+                    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+                    messages_seen INTEGER NOT NULL DEFAULT 0,
+                    documents_ingested INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )'''))
+            await _conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_mailboxes_tenant ON tenant_mailboxes(tenant_id)"
+            ))
+            await _conn.execute(text('''
+                CREATE TABLE IF NOT EXISTS mailbox_seen_messages (
+                    id VARCHAR PRIMARY KEY,
+                    mailbox_id VARCHAR NOT NULL,
+                    message_id VARCHAR NOT NULL,
+                    subject TEXT NOT NULL DEFAULT '',
+                    sender VARCHAR NOT NULL DEFAULT '',
+                    received_at TIMESTAMPTZ,
+                    outcome VARCHAR NOT NULL DEFAULT '',
+                    document_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    processed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )'''))
+            # The dedup lookup on every message: mailbox + message id.
+            await _conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_seen_message "
+                "ON mailbox_seen_messages(mailbox_id, message_id)"
+            ))
+
+            # Deduplication reads file->>'fingerprint' on every ingest.
+            await _conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_documents_fingerprint "
+                "ON documents ((file->>'fingerprint'))"
+            ))
             # Per-tenant SAP endpoint: the full URL as that customer exposes it,
             # plus their own request shape. Replaces the assumption of one shared
             # host on client 800.
@@ -124,11 +180,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Start background workers in the FastAPI event loop
     from src.workers.change_stream_worker import start_change_stream_worker
     from src.workers.event_consumer import start_event_consumer
+    from src.workers.mail_worker import start_mail_worker
 
     consumer_task = asyncio.create_task(start_event_consumer(), name="event-consumer")
     change_stream_task = asyncio.create_task(
         start_change_stream_worker(), name="change-stream"
     )
+    mail_task = asyncio.create_task(start_mail_worker(), name="mail-ingest")
     log.info("Background workers started")
 
     yield
@@ -136,7 +194,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Graceful shutdown: cancel background tasks then close infra connections
     consumer_task.cancel()
     change_stream_task.cancel()
-    for task in (consumer_task, change_stream_task):
+    mail_task.cancel()
+    for task in (consumer_task, change_stream_task, mail_task):
         try:
             await task
         except asyncio.CancelledError:
@@ -222,7 +281,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 from src.routers import auth, customers, dashboard, documents, health, websocket  # noqa: E402
-from src.routers import admin  # noqa: E402
+from src.routers import admin, mailboxes  # noqa: E402
 
 app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
@@ -231,3 +290,4 @@ app.include_router(customers.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(websocket.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(mailboxes.router, prefix="/api")

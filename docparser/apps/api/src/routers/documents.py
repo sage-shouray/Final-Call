@@ -101,6 +101,13 @@ async def upload_document(
     document_type: str = Form(...),
     invoice_subtype: str = Form(default=""),
 ) -> DocumentUploadResponse:
+    """Accept a document from the web UI.
+
+    The work happens in ingestion_service, which the mailbox poller also calls —
+    so a document behaves identically however it arrived.
+    """
+    from src.services.ingestion_service import IngestSource, ingest_document
+
     try:
         doc_type = DocumentType(document_type)
     except ValueError:
@@ -109,14 +116,6 @@ async def upload_document(
             error_code="INVALID_DOCUMENT_TYPE",
         )
 
-    file_bytes = await file.read()
-    content_type = file.content_type or "application/octet-stream"
-    filename = file.filename or "upload"
-    validate_upload(file_bytes, filename, content_type)
-
-    document_id = _generate_document_id()
-    s3_key = build_s3_key(doc_type.value, document_id, filename)
-
     parsed_subtype: InvoiceSubtype | None = None
     if invoice_subtype:
         try:
@@ -124,94 +123,44 @@ async def upload_document(
         except ValueError:
             pass
 
-    from src.models.document import TCode as _TCode
-    tcode = _TCode.FB60 if parsed_subtype == InvoiceSubtype.NON_PO else TCODE_MAP[doc_type]
-
-    doc_data: dict[str, Any] = {
-        "document_id":     document_id,
-        "type":            doc_type.value,
-        "tcode":           tcode.value,
-        "invoice_subtype": parsed_subtype.value if parsed_subtype else None,
-        "status":          DocumentStatus.UPLOADED.value,
-        "uploaded_by":     current_user.sub,
-        "uploaded_at":     datetime.now(UTC),
-        "tenant_id":       getattr(current_user, "tenant_id", None),
-        "file": {
-            "original_name": filename,
-            "s3_key":        s3_key,
-            "size_bytes":    len(file_bytes),
-            "mime_type":     content_type,
-        },
-        "error_log": [],
-    }
-
-    async with AsyncSessionLocal() as session:
-        doc_repo = DocumentRepository(session)
-        row_id = await doc_repo.create(doc_data)
-        await session.commit()
-
-    log.info("document record created", document_id=document_id, row_id=row_id)
+    file_bytes = await file.read()
+    result = await ingest_document(
+        file_bytes=file_bytes,
+        filename=file.filename or "upload",
+        content_type=file.content_type or "application/octet-stream",
+        document_type=doc_type,
+        invoice_subtype=parsed_subtype,
+        tenant_id=getattr(current_user, "tenant_id", None),
+        source=IngestSource(channel="web", actor=current_user.sub),
+        # A person re-uploading knows what they are doing; the duplicate is
+        # reported by the auto-post gate rather than refused here.
+        reject_duplicates=False,
+    )
 
     try:
-        actual_key = await upload_file(
-            file_bytes, filename, content_type, doc_type.value, document_id,
-            uploaded_by=current_user.sub,
-        )
-    except Exception as exc:
-        async with AsyncSessionLocal() as session:
-            await DocumentRepository(session).update_status(
-                row_id, DocumentStatus.FAILED,
-                error_entry={"stage": "upload", "message": f"S3 upload failed: {exc}",
-                             "detail": type(exc).__name__, "timestamp": datetime.now(UTC).isoformat()},
-            )
-            await session.commit()
-        raise
-
-    # Update s3_key if it changed
-    if actual_key != s3_key:
-        async with AsyncSessionLocal() as session:
-            doc = await DocumentRepository(session).find_by_id(row_id)
-            if doc:
-                file_data = dict(doc.get("file") or {})
-                file_data["s3_key"] = actual_key
-                await DocumentRepository(session).update(row_id, {"file": file_data})
-                await session.commit()
-
-    try:
-        redis = get_redis()
-        await redis.xadd("document:uploaded", {
-            "document_id": document_id,
-            "row_id":      row_id,
+        await get_redis().xadd("document:uploaded", {
+            "document_id": result.document_id,
+            "row_id":      result.row_id,
             "uploaded_by": current_user.sub,
             "timestamp":   datetime.now(UTC).isoformat(),
         })
     except Exception as exc:
-        log.warning("Redis stream publish failed", error=str(exc), document_id=document_id)
+        log.warning("Redis stream publish failed", error=str(exc), document_id=result.document_id)
 
     import asyncio as _asyncio
-    from src.workers.pipeline_worker import run_pipeline
-
-    async def _ocr_with_logging() -> None:
-        # Runs the fast identity + SAP routing track alongside OCR; falls back to
-        # OCR alone if the pipeline is disabled or the fast track cannot run.
-        try:
-            await run_pipeline(document_id)
-        except Exception as exc:
-            log.error("ingest pipeline crashed", document_id=document_id, error=str(exc), exc_info=True)
-
-    _asyncio.create_task(_ocr_with_logging(), name=f"pipeline-{document_id}")
     _asyncio.create_task(_write_doc_audit(
         action="document.uploaded",
-        document_id=document_id,
+        document_id=result.document_id,
         performed_by=current_user.sub,
-        details={"type": doc_type.value, "filename": filename, "size": len(file_bytes)},
+        details={"type": doc_type.value, "filename": file.filename, "size": len(file_bytes)},
     ))
-    log.info("OCR task started", document_id=document_id)
+
+    message = "Document uploaded successfully. Extraction started in the background."
+    if result.duplicate_of:
+        message = f"Uploaded. Note: an identical file was already processed as {result.duplicate_of}."
 
     return DocumentUploadResponse(
-        document_id=document_id,
-        status="processing",
-        message="Document uploaded successfully. Extraction started in the background.",
+        document_id=result.document_id, status="processing", message=message,
     )
 
 

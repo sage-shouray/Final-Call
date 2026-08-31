@@ -114,7 +114,26 @@ async def evaluate(doc: dict[str, Any]) -> dict[str, Any]:
             else "Awaiting goods receipt or service entry sheet.",
         ))
 
-    # ── 6. Not a duplicate ────────────────────────────────────────────────
+    # ── 6. Emailed documents must come from a known sender ────────────────
+    # A mailbox address becomes public the moment it is shared with vendors, so
+    # anyone can post a PDF into it. An emailed invoice therefore only qualifies
+    # for unattended posting when its sender is on the tenant's allowlist AND
+    # that mailbox is configured to automate — both decided at ingestion time.
+    if (doc.get("source") or "web") == "email":
+        meta = doc.get("source_metadata") or {}
+        sender = meta.get("sender_trusted")
+        allowed = bool(meta.get("auto_post_allowed"))
+        gates.append(_gate(
+            "email_sender_trusted", allowed,
+            "Sender is on the allowlist and this mailbox may post automatically."
+            if allowed else (
+                "Emailed by an unrecognised sender — needs review."
+                if sender is False
+                else "This mailbox is not configured for unattended posting."
+            ),
+        ))
+
+    # ── 7. Not a duplicate ────────────────────────────────────────────────
     duplicate_of = await _find_duplicate(doc, extracted)
     gates.append(_gate(
         "not_duplicate", duplicate_of is None,
@@ -122,7 +141,7 @@ async def evaluate(doc: dict[str, Any]) -> dict[str, Any]:
         else "No previous posting found for this invoice.",
     ))
 
-    # ── 7. Value ceiling — high-value invoices always get a human ─────────
+    # ── 8. Value ceiling — high-value invoices always get a human ─────────
     ceiling = _dec(settings.AUTO_POST_MAX_AMOUNT)
     within_ceiling = ceiling <= 0 or inv_gross <= ceiling
     gates.append(_gate(

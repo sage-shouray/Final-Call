@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     ENV: Annotated[str, Field(pattern=r"^(development|staging|production)$")] = "development"
     DEBUG: bool = False
     SECRET_KEY: SecretStr = Field(default="change-me-in-production")
+    # Encrypts credentials held on behalf of customers (mailbox passwords, OAuth
+    # secrets). Generate with: python -c "from cryptography.fernet import Fernet;
+    # print(Fernet.generate_key().decode())". Changing it makes stored
+    # credentials unreadable and they must be re-entered.
+    SECRET_ENCRYPTION_KEY: SecretStr = Field(default="")
 
     # ── Database — PostgreSQL ─────────────────────────────────────────────
     # Format: postgresql+asyncpg://user:password@host:port/dbname
@@ -113,6 +118,20 @@ class Settings(BaseSettings):
     AUTO_POST_MIN_CONFIDENCE: Annotated[float, Field(ge=0.0, le=1.0)] = 0.85
     # Invoices above this value always require approval. 0 disables the ceiling.
     AUTO_POST_MAX_AMOUNT: float = 100_000.0
+
+    # ── Mail ingestion ────────────────────────────────────────────────────
+    # Poll configured mailboxes and ingest invoice attachments automatically.
+    MAIL_INGEST_ENABLED: bool = False
+    # How many mailboxes are polled at once. One slow or hanging mailbox must
+    # not delay every other customer's mail.
+    MAIL_POLL_CONCURRENCY: Annotated[int, Field(ge=1, le=32)] = 4
+    # Give up on a single mailbox after this long and move on.
+    MAIL_POLL_TIMEOUT_SECONDS: Annotated[int, Field(ge=10, le=600)] = 120
+    # Most attachments taken from one message, so a single mail cannot flood the
+    # pipeline.
+    MAIL_MAX_ATTACHMENTS: Annotated[int, Field(ge=1, le=100)] = 20
+    # Ignore attachments smaller than this — logos and signature images.
+    MAIL_MIN_ATTACHMENT_BYTES: Annotated[int, Field(ge=0)] = 8_192
 
     # ── Google AI (Gemini) ────────────────────────────────────────────────
     GEMINI_API_KEY: SecretStr = Field(default="")
