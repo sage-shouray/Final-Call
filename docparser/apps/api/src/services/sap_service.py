@@ -49,6 +49,28 @@ def _pad_po_item(po_item: str) -> str:
     return clean.zfill(5) if clean.isdigit() else clean
 
 
+def _miro_template_context(payload: dict[str, Any]) -> dict[str, Any]:
+    """Flatten the built-in MIRO payload into fields a customer template can name.
+
+    Templates reference business terms (po_number, gross_amount, line_items)
+    rather than our internal nesting, so a customer's sample JSON does not have
+    to know how this application happens to structure things.
+    """
+    data = (payload.get("data") or [{}])[0]
+    items = data.get("item_data") or []
+    return {
+        **data,
+        "po_number":     items[0].get("po_number", "") if items else "",
+        "invoice_no":    data.get("reference_document_no", ""),
+        "gross_amount":  data.get("gross_amount", 0),
+        "company_code":  data.get("company_code", ""),
+        "currency":      data.get("currency", ""),
+        "document_date": data.get("document_date", ""),
+        "posting_date":  data.get("posting_date", ""),
+        "line_items":    items,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Redis-backed circuit breaker storage
 # ---------------------------------------------------------------------------
@@ -152,8 +174,20 @@ class SAPService:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    # Set by get_sap_service(tenant_id=...). None means "use global settings".
+    tenant_id: str | None = None
+
     def _sap_url(self, path: str) -> str:
+        """The default endpoint, used when no tenant configuration applies."""
         return f"{self._base_url}/{path.lstrip('/')}?sap-client={self._client}"
+
+    async def _endpoint(self, api_key: str, default_path: str, method: str = "POST"):
+        """Resolve which URL this customer uses for `api_key`."""
+        from src.services.tenant_api_service import resolve
+        return await resolve(
+            api_key, tenant_id=self.tenant_id,
+            default_path=default_path, default_method=method,
+        )
 
     def _retry_eta(self) -> int:
         elapsed = time.time() - self._storage.opened_at_timestamp()
@@ -230,29 +264,38 @@ class SAPService:
             return int(obj)
         return obj
 
-    async def _http_post(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
-        """Single raw HTTP POST using httpx — handles long-running SAP calls correctly."""
+    async def _http_post(self, url: str, payload: dict[str, Any], endpoint: Any = None) -> dict[str, Any]:
+        """Single raw HTTP POST using httpx — handles long-running SAP calls correctly.
+
+        `endpoint`, when given, supplies that customer's credentials and headers
+        in place of the global ones.
+        """
         import json as _json
         import httpx
         t0 = time.perf_counter()
         payload = SAPService._clean_numbers(payload)
-        log.info("SAP POST payload", payload=_json.dumps(payload, indent=2))
+        log.info("SAP POST payload", url=url, tenant_id=self.tenant_id,
+                 payload=_json.dumps(payload, indent=2))
         timeout_secs = settings.SAP_TIMEOUT_SECONDS
-        auth = (
-            (settings.SAP_USERNAME, settings.SAP_PASSWORD.get_secret_value())
-            if settings.SAP_USERNAME
-            else None
-        )
+        # Per-customer credentials when this endpoint came from their config;
+        # the global ones otherwise.
+        if endpoint is not None and getattr(endpoint, "auth", None):
+            auth = endpoint.auth
+        else:
+            auth = (
+                (settings.SAP_USERNAME, settings.SAP_PASSWORD.get_secret_value())
+                if settings.SAP_USERNAME
+                else None
+            )
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        if endpoint is not None:
+            headers.update(getattr(endpoint, "extra_headers", {}) or {})
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(connect=30.0, read=float(timeout_secs), write=30.0, pool=30.0),
             auth=auth,
         ) as client:
             try:
-                resp = await client.post(
-                    url,
-                    json=payload,
-                    headers={"Content-Type": "application/json", "Accept": "application/json"},
-                )
+                resp = await client.post(url, json=payload, headers=headers)
                 duration_ms = int((time.perf_counter() - t0) * 1000)
                 raw_text = resp.text
                 log.info(
@@ -307,9 +350,21 @@ class SAPService:
         raise SAPConnectionError("PO fetch failed after all retries")  # unreachable
 
     async def _post_miro_raw(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Single MIRO POST — no retry to prevent duplicate invoice creation in SAP."""
-        url = self._sap_url("ZMIRO/MIRO")
-        return await self._http_post(url, payload)
+        """Single MIRO POST — no retry to prevent duplicate invoice creation in SAP.
+
+        The URL and, where the customer has supplied a sample, the request shape
+        both come from that customer's configuration.
+        """
+        from src.services.tenant_api_service import build_payload
+
+        endpoint = await self._endpoint("miro_post", "ZMIRO/MIRO")
+        body = await build_payload(
+            endpoint,
+            _miro_template_context(payload),
+            default_payload=payload,
+            required=("po_number",),
+        )
+        return await self._http_post(endpoint.url, body, endpoint=endpoint)
 
     async def _post_park_miro_raw(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Single MIRO Park POST — same payload contract as post_miro, no retry to
@@ -841,8 +896,19 @@ class SAPService:
 _sap_service: SAPService | None = None
 
 
-def get_sap_service() -> SAPService:
+def get_sap_service(tenant_id: str | None = None) -> SAPService:
+    """Return the SAP client, optionally bound to a customer.
+
+    Without a tenant the shared instance is used, which reads the global
+    settings — the single-tenant behaviour this started as. With one, the
+    instance resolves each endpoint from that customer's saved configuration,
+    so two customers post to two different SAP systems.
+    """
     global _sap_service
+    if tenant_id:
+        service = SAPService()
+        service.tenant_id = tenant_id
+        return service
     if _sap_service is None:
         _sap_service = SAPService()
     return _sap_service

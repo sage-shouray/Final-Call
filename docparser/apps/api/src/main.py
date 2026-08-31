@@ -105,6 +105,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await _conn.execute(text(
                 "ALTER TABLE documents ADD COLUMN IF NOT EXISTS miro_parking JSONB"
             ))
+            # Per-tenant SAP endpoint: the full URL as that customer exposes it,
+            # plus their own request shape. Replaces the assumption of one shared
+            # host on client 800.
+            await _conn.execute(text(
+                "ALTER TABLE tenant_api_configs ADD COLUMN IF NOT EXISTS full_url VARCHAR NOT NULL DEFAULT ''"
+            ))
+            await _conn.execute(text(
+                "ALTER TABLE tenant_api_configs ADD COLUMN IF NOT EXISTS payload_template JSONB NOT NULL DEFAULT '{}'::jsonb"
+            ))
             await _conn.execute(text(
                 "ALTER TABLE documents ADD COLUMN IF NOT EXISTS pipeline JSONB"
             ))

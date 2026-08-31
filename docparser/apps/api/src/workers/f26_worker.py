@@ -85,7 +85,7 @@ async def run_f26_simulate(
             payload_dict = _build_f26_payload(extracted, indicator="X", form_data=form_data)
             payload = F26Payload(**payload_dict)
 
-            sap_service = get_sap_service()
+            sap_service = get_sap_service(doc.get("tenant_id"))
             resp = await sap_service.call_f26(payload)
 
             sim_data: dict[str, Any] = {
@@ -155,7 +155,7 @@ async def run_f26_post(document_id: str, posted_by: str = "system") -> str:
             payload_dict = _build_f26_payload(extracted, indicator="", form_data=sim_payload)
             payload = F26Payload(**payload_dict)
 
-            sap_service = get_sap_service()
+            sap_service = get_sap_service(doc.get("tenant_id"))
             resp = await sap_service.call_f26(payload)
 
             posting_data: dict[str, Any] = {

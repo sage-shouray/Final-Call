@@ -457,6 +457,7 @@ async def post_service_po_lines(
     po_number: str,
     company_code: str = "",
     already_posted: dict[str, str] | None = None,
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """Post the Service PO invoice, line by line, via ZSPO_VALD/SERV_PO_VAL.
 
@@ -474,7 +475,7 @@ async def post_service_po_lines(
     """
     from src.services.sap_service import get_sap_service
 
-    sap_service = get_sap_service()
+    sap_service = get_sap_service(tenant_id)
     lines: list[dict[str, Any]] = extracted.get("line_items") or []
     posted_before = {_norm_item(k): v for k, v in (already_posted or {}).items() if v}
 

@@ -43,7 +43,7 @@ async def _persist(document_id: str, patch: dict[str, Any]) -> None:
         await session.commit()
 
 
-async def _fast_track(document_id: str, file_bytes: bytes) -> dict[str, Any]:
+async def _fast_track(document_id: str, file_bytes: bytes, tenant_id: str | None = None) -> dict[str, Any]:
     """Identity scrape then SAP routing. Persists each step as it completes."""
     from src.services.identity_service import extract_identity
     from src.services.routing_service import classify
@@ -52,7 +52,8 @@ async def _fast_track(document_id: str, file_bytes: bytes) -> dict[str, Any]:
     await _persist(document_id, {"identity": identity})
 
     routing = await classify(
-        identity["po_candidates"], invoice_no=identity.get("invoice_no", "")
+        identity["po_candidates"], invoice_no=identity.get("invoice_no", ""),
+        tenant_id=tenant_id,
     )
     await _persist(document_id, {"routing": routing})
 
@@ -176,7 +177,7 @@ async def run_pipeline(document_id: str) -> None:
     async def _fast() -> None:
         nonlocal fast_result
         try:
-            fast_result = await _fast_track(document_id, file_bytes)
+            fast_result = await _fast_track(document_id, file_bytes, doc.get("tenant_id"))
         except Exception as exc:
             bound_log.error("fast track failed", error=str(exc))
             await _persist(document_id, {"fast_track_error": str(exc)})

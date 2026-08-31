@@ -36,7 +36,7 @@ async def run_migo_direct(document_id: str, posted_by: str = "system") -> None:
             await doc_repo.update_status(doc_id, DocumentStatus.GR_POSTING)
             await session.commit()
 
-            sap_service = get_sap_service()
+            sap_service = get_sap_service(doc.get("tenant_id"))
             sap_po = await sap_service.fetch_po_details(po_number) if po_number else SAPPOResponse()
             bound_log.info("SAP PO fetched", line_count=len(sap_po.PO_LINE_ITEMS))
 

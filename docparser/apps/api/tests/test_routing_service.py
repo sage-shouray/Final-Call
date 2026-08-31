@@ -32,7 +32,7 @@ def sap(monkeypatch: pytest.MonkeyPatch):
     def _install(result: Any) -> FakeSAP:
         fake = FakeSAP(result)
         import src.services.sap_service as ss
-        monkeypatch.setattr(ss, "get_sap_service", lambda: fake)
+        monkeypatch.setattr(ss, "get_sap_service", lambda *_a, **_k: fake)
         return fake
 
     return _install

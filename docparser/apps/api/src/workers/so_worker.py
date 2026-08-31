@@ -131,7 +131,7 @@ async def run_so_simulate(document_id: str, customer_id: str) -> None:
             await doc_repo.update_status(doc_id, DocumentStatus.VALIDATING)
             await session.commit()
 
-            sap = get_sap_service()
+            sap = get_sap_service(doc.get("tenant_id"))
             result = await sap.simulate_sales_order(payload)
 
             bound_log.info("SAP simulate response", success=result.success, message=result.message)
@@ -201,7 +201,7 @@ async def run_so_create(document_id: str, customer_id: str) -> None:
             await doc_repo.update_status(doc_id, DocumentStatus.POSTING)
             await session.commit()
 
-            sap = get_sap_service()
+            sap = get_sap_service(doc.get("tenant_id"))
             result = await sap.create_sales_order(payload)
 
             bound_log.info("SO create response",

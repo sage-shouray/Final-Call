@@ -87,7 +87,7 @@ async def test_serv_po_val_is_sent_the_taxable_amount(monkeypatch, taxable, amou
             })
 
     import src.services.sap_service as ss
-    monkeypatch.setattr(ss, "get_sap_service", lambda: FakeSAP())
+    monkeypatch.setattr(ss, "get_sap_service", lambda *_a, **_k: FakeSAP())
 
     extracted = {"line_items": [{
         "line_number": "00010", "quantity": "1",

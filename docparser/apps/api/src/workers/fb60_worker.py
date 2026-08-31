@@ -36,7 +36,7 @@ async def run_fb60_direct(document_id: str, form_data: dict[str, Any], posted_by
             payload = build_fb60_payload(form_data)
             bound_log.info("FB60 payload built", line_count=len(payload.data[0].Invoice_Items))
 
-            sap_service = get_sap_service()
+            sap_service = get_sap_service(doc.get("tenant_id"))
             fb60_resp = await sap_service.post_fb60(payload)
             bound_log.info("FB60 response received", fb60_number=fb60_resp.fb60_number, success=fb60_resp.success)
 

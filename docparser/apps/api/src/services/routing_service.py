@@ -107,6 +107,7 @@ async def classify(
     po_candidates: list[str],
     *,
     invoice_no: str = "",
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """Resolve a document's route from SAP.
 
@@ -133,7 +134,8 @@ async def classify(
             reason="No PO number found on the document — treated as a non-PO invoice.",
         )
 
-    sap_service = get_sap_service()
+    # The PO lookup must hit this customer's SAP, not a shared one.
+    sap_service = get_sap_service(tenant_id)
     tried: list[str] = []
     lookup_errors: list[str] = []
     rejected: list[str] = []

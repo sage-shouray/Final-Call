@@ -18,10 +18,10 @@ interface Company {
 }
 interface ApiConfig {
   id: string; api_key: string; label: string; workflow: string;
+  full_url: string; payload_template: Record<string, unknown>;
   base_url: string; path: string; method: string; sap_client: string;
   auth_type: string; username: string; is_active: boolean;
   last_tested_at: string | null; last_test_status: string | null;
-  full_url: string;
 }
 interface Pricing {
   id: string; tcode: string; label: string; price_per_document: number;
@@ -90,6 +90,77 @@ function Badge({ label, green }: { label: string; green: boolean }) {
 }
 
 // ── Inline edit cell ──────────────────────────────────────────────────────────
+
+const SAMPLE_PLACEHOLDER =
+  '{ "data": [{ "po_number": "{{po_number}}", "gross_amount": "{{gross_amount}}" }] }';
+
+/**
+ * The customer's own request shape.
+ *
+ * Their SAP expects different key names and nesting from everyone else's, so an
+ * admin pastes a sample of what that system wants and marks the variable parts
+ * with {{placeholders}}. Leaving it empty keeps the built-in payload.
+ */
+function SampleJsonCell({
+  api, onSave,
+}: {
+  api: ApiConfig;
+  onSave: (template: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(() =>
+    api.payload_template && Object.keys(api.payload_template).length
+      ? JSON.stringify(api.payload_template, null, 2)
+      : '');
+  const [error, setError] = useState('');
+  const configured = api.payload_template && Object.keys(api.payload_template).length > 0;
+
+  const save = () => {
+    if (text.trim()) {
+      try { JSON.parse(text); } catch (e) { setError((e as Error).message); return; }
+    }
+    setError('');
+    onSave(text.trim());
+    setOpen(false);
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={cn('rounded px-2 py-1 text-xs font-medium',
+          configured
+            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+            : 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400')}
+      >
+        {configured ? 'Custom' : 'Default'}
+      </button>
+    );
+  }
+
+  return (
+    <div className="min-w-[320px] space-y-1.5">
+      <textarea
+        value={text}
+        onChange={e => setText(e.target.value)}
+        rows={8}
+        spellCheck={false}
+        placeholder={SAMPLE_PLACEHOLDER}
+        className="w-full rounded border border-neutral-300 bg-white p-2 font-mono text-[11px] dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-100"
+      />
+      <p className="text-[10px] text-neutral-400">
+        Use <code>{'{{po_number}}'}</code>, <code>{'{{gross_amount}}'}</code>, and
+        {' '}<code>{'[{"__repeat__": "line_items", ...}]'}</code> for line rows. Empty = built-in payload.
+      </p>
+      {error && <p className="text-[10px] text-red-600">{error}</p>}
+      <div className="flex gap-1.5">
+        <button onClick={save} className="rounded bg-primary-600 px-2 py-1 text-xs font-medium text-white hover:bg-primary-700">Save</button>
+        <button onClick={() => { setOpen(false); setError(''); }} className="rounded bg-neutral-100 px-2 py-1 text-xs dark:bg-neutral-800">Cancel</button>
+      </div>
+    </div>
+  );
+}
 
 function EditableCell({ value, onSave }: { value: string | number; onSave: (v: string) => void }) {
   const [editing, setEditing] = useState(false);
@@ -381,7 +452,7 @@ function ApisTab({ tenantId }: { tenantId: string }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-neutral-50 dark:bg-neutral-800/50 border-b border-neutral-200 dark:border-neutral-800">
-                  {['API', 'Method', 'Base URL', 'Path', 'SAP Client', 'Status', 'Actions'].map(h => (
+                  {['API', 'Method', 'Endpoint URL', 'Sample JSON', 'Status', 'Actions'].map(h => (
                     <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-400">{h}</th>
                   ))}
                 </tr>
@@ -396,12 +467,20 @@ function ApisTab({ tenantId }: { tenantId: string }) {
                         {a.method}
                       </span>
                     </td>
+                    {/* The complete endpoint as this customer exposes it. There is no
+                        shared host and no assumed sap-client, so the whole URL is entered
+                        here rather than assembled from parts. */}
                     <td className="px-4 py-3 font-mono text-xs">
-                      <EditableCell value={a.base_url || '—'} onSave={v => updateApi.mutate({ key: a.api_key, body: { base_url: v } })} />
+                      <EditableCell
+                        value={a.full_url || a.base_url || '—'}
+                        onSave={v => updateApi.mutate({ key: a.api_key, body: { full_url: v } })}
+                      />
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-neutral-500">{a.path}</td>
-                    <td className="px-4 py-3 text-xs">
-                      <EditableCell value={a.sap_client} onSave={v => updateApi.mutate({ key: a.api_key, body: { sap_client: v } })} />
+                    <td className="px-4 py-3">
+                      <SampleJsonCell
+                        api={a}
+                        onSave={tpl => updateApi.mutate({ key: a.api_key, body: { payload_template: tpl } })}
+                      />
                     </td>
                     <td className="px-4 py-3">
                       {a.last_test_status === 'ok'
