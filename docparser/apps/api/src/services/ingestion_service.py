@@ -77,18 +77,24 @@ async def find_by_fingerprint(fingerprint: str, tenant_id: str | None) -> str | 
     Scoped to the tenant: two customers may legitimately receive byte-identical
     documents, and one must never be told about the other's.
     """
-    from sqlalchemy import text
+    from sqlalchemy import select
 
     from src.database import AsyncSessionLocal
+    from src.models.document import DocumentRow
 
-    sql = """
-        SELECT document_id FROM documents
-         WHERE file->>'fingerprint' = :fp
-           AND (:tid::text IS NULL OR tenant_id = :tid)
-         ORDER BY uploaded_at DESC LIMIT 1
-    """
+    # Built with SQLAlchemy constructs rather than raw SQL: a "::text" cast in a
+    # text() query collides with the :param binding syntax and fails to parse.
+    stmt = (
+        select(DocumentRow.document_id)
+        .where(DocumentRow.file["fingerprint"].astext == fingerprint)
+        .order_by(DocumentRow.uploaded_at.desc())
+        .limit(1)
+    )
+    if tenant_id is not None:
+        stmt = stmt.where(DocumentRow.tenant_id == tenant_id)
+
     async with AsyncSessionLocal() as session:
-        row = (await session.execute(text(sql), {"fp": fingerprint, "tid": tenant_id})).first()
+        row = (await session.execute(stmt)).first()
     return row[0] if row else None
 
 

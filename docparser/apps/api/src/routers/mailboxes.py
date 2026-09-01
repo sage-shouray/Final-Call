@@ -68,13 +68,18 @@ async def create_mailbox(
     if not address:
         raise ValidationError("A mailbox address is required.", error_code="MISSING_ADDRESS")
 
+    # Credentials may be filled in later. Registering the address first is the
+    # normal case: the Azure app registration needs a Global Admin and often
+    # arrives days after someone decides which mailbox to use. A mailbox without
+    # them simply cannot be enabled — enforced below and on update.
     credentials = body.get("credentials") or {}
-    missing = [f for f in _REQUIRED[provider] if not str(credentials.get(f) or "").strip()]
-    if missing:
-        raise ValidationError(
-            f"Missing credential field(s) for {provider}: {', '.join(missing)}",
-            error_code="INCOMPLETE_CREDENTIALS",
-        )
+    if credentials:
+        missing = [f for f in _REQUIRED[provider] if not str(credentials.get(f) or "").strip()]
+        if missing:
+            raise ValidationError(
+                f"Missing credential field(s) for {provider}: {', '.join(missing)}",
+                error_code="INCOMPLETE_CREDENTIALS",
+            )
 
     row = MailboxRow(
         id=str(uuid.uuid4()),
@@ -82,7 +87,7 @@ async def create_mailbox(
         provider=provider,
         label=str(body.get("label") or address),
         address=address,
-        credentials_enc=encrypt_dict(credentials),
+        credentials_enc=encrypt_dict(credentials) if credentials else "",
         folder=str(body.get("folder") or ("Inbox" if provider == MailProvider.MICROSOFT_GRAPH.value else "INBOX")),
         poll_interval_s=int(body.get("poll_interval_s") or 60),
         # Disabled until someone has run Test Connection successfully — a
@@ -127,6 +132,11 @@ async def update_mailbox(
         if "auto_post_enabled" in body:
             row.auto_post_enabled = bool(body["auto_post_enabled"])
         if "enabled" in body:
+            if body["enabled"] and not row.credentials_enc:
+                raise ValidationError(
+                    "Add credentials before enabling this mailbox.",
+                    error_code="CREDENTIALS_REQUIRED",
+                )
             row.enabled = bool(body["enabled"])
             if row.enabled:
                 # Give a re-enabled mailbox a clean slate so backoff does not
@@ -185,6 +195,9 @@ async def test_mailbox(
         )).scalar_one_or_none()
         if not row:
             raise NotFoundError("Mailbox not found", error_code="MAILBOX_NOT_FOUND")
+        if not row.credentials_enc:
+            return {"ok": False, "kind": "config",
+                    "error": "No credentials saved for this mailbox yet."}
         provider_name, address, folder = row.provider, row.address, row.folder
         credentials = decrypt_dict(row.credentials_enc)
 

@@ -470,3 +470,25 @@ async def test_web_uploads_are_never_replied_to():
         assert await mail_reply.send_outcome("DOC-1") is False
     finally:
         dr.DocumentRepository = original  # type: ignore[misc]
+
+
+# ── The size floor must not eat real invoices ────────────────────────────────
+
+def test_the_attachment_floor_admits_a_realistically_small_invoice():
+    """Regression: the floor was set to 8 KB by guesswork.
+
+    Measured across 239 real invoices the median is ~5.9 KB and the smallest
+    2.3 KB, so that floor silently discarded 85% of genuine mail — the worst
+    possible failure, because nothing appears to go wrong.
+    """
+    from src.config import settings
+
+    smallest_real_invoice = 2_359
+    assert settings.MAIL_MIN_ATTACHMENT_BYTES < smallest_real_invoice
+
+
+async def test_a_small_but_genuine_invoice_is_ingested(captured):
+    """A 3 KB single-page PDF is an ordinary invoice, not a signature image."""
+    small = Attachment("invoice.pdf", b"%PDF-1.7\n" + b"x" * 3_000)
+    ids = await process_message(mailbox(), message(attachments=[small]))
+    assert ids == ["DOC-1"]
