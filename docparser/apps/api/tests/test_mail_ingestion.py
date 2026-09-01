@@ -389,3 +389,84 @@ async def test_email_ingest_records_its_origin(ingest_env):
     assert row["source"] == "email"
     assert row["uploaded_by"] == "ap@vendor.com"
     assert row["source_reference"] == "<msg-1@vendor.com>"
+
+
+# ── What the sender is told ──────────────────────────────────────────────────
+
+def _doc(**over: Any) -> dict[str, Any]:
+    base = {
+        "extracted": {"invoice_no": "INV-4500022773"},
+        "pipeline": {"routing": {"po_number": "4500022773"}, "autopost": {"gates": []}},
+        "miro_posting": {}, "grn_posting": {},
+    }
+    return {**base, **over}
+
+
+def test_a_posted_invoice_quotes_its_sap_documents():
+    """The numbers a vendor will quote back at you later."""
+    from src.services.mail_reply import compose_reply
+
+    subject, body = compose_reply(_doc(
+        miro_posting={"status": "success", "miro_number": "5105609733"},
+        grn_posting={"status": "success", "grn_number": "4900004378"},
+    ))
+    assert "Posted" in subject
+    assert "5105609733" in body
+    assert "4900004378" in body
+
+
+def test_a_held_invoice_explains_why():
+    from src.services.mail_reply import compose_reply
+
+    subject, body = compose_reply(_doc(pipeline={"routing": {
+        "route": "hold",
+        "reason": "SAP does not recognise PO number 4510167689 — check the PO number.",
+    }}))
+    assert "Needs attention" in subject
+    assert "4510167689" in body
+
+
+def test_a_transient_failure_asks_for_nothing():
+    """No point telling a vendor to act on an outage at our end."""
+    from src.services.mail_reply import compose_reply
+
+    _, body = compose_reply(_doc(pipeline={"routing": {
+        "route": "hold", "reason": "Could not reach SAP.", "retryable": True,
+    }}))
+    assert "no action is needed" in body.lower()
+
+
+def test_an_invoice_awaiting_review_lists_the_reasons():
+    from src.services.mail_reply import compose_reply
+
+    subject, body = compose_reply(_doc(pipeline={
+        "routing": {"route": "miro_direct"},
+        "autopost": {"gates": [
+            {"gate": "within_auto_post_ceiling", "passed": False,
+             "detail": "Invoice 702,100.00 exceeds the auto-post ceiling."},
+            {"gate": "vendor_match", "passed": True, "detail": "ok"},
+        ]},
+    }))
+    assert "Received" in subject
+    assert "702,100.00" in body
+    assert "ok" not in body          # passing checks are not the sender's problem
+
+
+async def test_web_uploads_are_never_replied_to():
+    """There is nobody to reply to — the document came from a browser."""
+    from src.services import mail_reply
+
+    async def _find(_: str) -> dict[str, Any]:
+        return {"source": "web", "uploaded_by": "user-123"}
+
+    class Repo:
+        def __init__(self, s: Any) -> None: ...
+        find_by_document_id = staticmethod(_find)
+
+    import src.repositories.document_repository as dr
+    original = dr.DocumentRepository
+    dr.DocumentRepository = Repo  # type: ignore[misc]
+    try:
+        assert await mail_reply.send_outcome("DOC-1") is False
+    finally:
+        dr.DocumentRepository = original  # type: ignore[misc]

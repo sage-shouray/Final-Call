@@ -247,3 +247,12 @@ async def run_pipeline(document_id: str) -> None:
         except Exception as exc:
             bound_log.error("auto-post failed", error=str(exc))
             await _persist(document_id, {"autopost_blocked": str(exc)})
+
+    # Tell the sender what happened. Emailing an invoice and hearing nothing is
+    # what makes people phone Accounts Payable, which is the cost this was meant
+    # to remove. Never allowed to affect the document.
+    try:
+        from src.services.mail_reply import send_outcome
+        await send_outcome(document_id)
+    except Exception as exc:
+        bound_log.warning("outcome reply failed", error=str(exc))

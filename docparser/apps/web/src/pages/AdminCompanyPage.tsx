@@ -9,6 +9,7 @@ import {
 const PASSWORD_MIN_LENGTH = 8;
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { MailboxesTab } from '@/components/admin/MailboxesTab';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,7 +58,7 @@ const fetchBilling  = (id: string) => api.get(`/admin/companies/${id}/billing`).
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
 
-const TABS = ['Users', 'APIs', 'Pricing', 'Documents', 'Billing'] as const;
+const TABS = ['Users', 'APIs', 'Mailboxes', 'Pricing', 'Documents', 'Billing'] as const;
 type Tab = typeof TABS[number];
 
 const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -794,6 +795,7 @@ export default function AdminCompanyPage() {
         <div className="p-6">
           {tab === 'Users'     && <UsersTab   tenantId={id!} />}
           {tab === 'APIs'      && <ApisTab    tenantId={id!} />}
+          {tab === 'Mailboxes' && <MailboxesTab tenantId={id!} />}
           {tab === 'Pricing'   && <PricingTab tenantId={id!} />}
           {tab === 'Documents' && <DocsTab    tenantId={id!} />}
           {tab === 'Billing'   && <BillingTab tenantId={id!} />}
