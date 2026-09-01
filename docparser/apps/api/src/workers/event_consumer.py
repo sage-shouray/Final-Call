@@ -173,6 +173,7 @@ async def _consume_loop() -> None:
 
     log.info("Event consumer started", consumer=consumer_name)
 
+    consecutive_errors = 0
     while True:
         try:
             messages = await redis.xreadgroup(
@@ -203,8 +204,18 @@ async def _consume_loop() -> None:
             log.info("Event consumer shutting down", consumer=consumer_name)
             break
         except Exception as exc:
-            log.error("Event consumer loop error", error=str(exc))
-            await asyncio.sleep(2)
+            # Back off and stop repeating an unchanged message. A stopped Redis
+            # otherwise fills the log with one identical error every few seconds,
+            # burying anything that actually matters.
+            consecutive_errors += 1
+            if consecutive_errors == 1 or consecutive_errors % 15 == 0:
+                log.error("Event consumer loop error",
+                          error=str(exc), consecutive=consecutive_errors)
+            await asyncio.sleep(min(2 * consecutive_errors, 60))
+        else:
+            if consecutive_errors:
+                log.info("Event consumer recovered", after_errors=consecutive_errors)
+            consecutive_errors = 0
 
 
 # ---------------------------------------------------------------------------
