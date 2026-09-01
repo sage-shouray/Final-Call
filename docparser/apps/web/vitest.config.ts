@@ -14,7 +14,8 @@ export default defineConfig({
     css: false,
     coverage: {
       provider: 'v8',
-      reporter: ['text-summary'],
+      // lcov is what SonarQube parses; text-summary is for the terminal.
+      reporter: ['text-summary', 'lcov'],
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/test/**', 'src/**/*.d.ts'],
     },

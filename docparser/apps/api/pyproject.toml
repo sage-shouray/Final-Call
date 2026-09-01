@@ -88,4 +88,5 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-v --cov=src --cov-report=term-missing"
+# term-missing for humans, xml for SonarQube, junit for CI test reporting.
+addopts = "-v --cov=src --cov-report=term-missing --cov-report=xml:coverage.xml --junitxml=test-results.xml"

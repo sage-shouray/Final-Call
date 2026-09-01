@@ -86,3 +86,11 @@ apps/api/uploads/
 apps/api/.uploads/
 apps/api/src/uploads/
 **/src/uploads/
+
+# ── Analysis artefacts ───────────────────────────────────────────
+# Generated on every test run and consumed by SonarQube; never committed.
+coverage.xml
+test-results.xml
+.scannerwork/
+apps/web/coverage/
+.coverage
