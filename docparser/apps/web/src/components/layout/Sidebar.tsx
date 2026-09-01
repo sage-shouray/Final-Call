@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Upload, History, Clock,
   FileText, ClipboardList, FileCheck, Package, Truck, Receipt,
   Settings, BarChart2, PanelLeftClose, PanelLeftOpen,
-  ShieldCheck, LogOut, Users, IndianRupee,
+  ShieldCheck, LogOut, Users, IndianRupee, Mail,
 } from 'lucide-react';
 import uviraLogo from '@/assets/uvira-logo-transparent.png';
 import { useUIStore } from '@/store/uiStore';
@@ -133,6 +133,7 @@ export function Sidebar() {
         ...(isManager ? [{ label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard, count: metrics?.total_processed }] : []),
         { label: 'Upload Document', to: '/upload',    icon: Upload  },
         { label: 'History',         to: '/documents', icon: History },
+        { label: 'Mail Inbox',      to: '/mail-inbox', icon: Mail },
         ...(isManager ? [{ label: 'Pending Review', to: '/documents?status=validated', icon: Clock, count: metrics?.pending_review }] : []),
       ],
     },

@@ -232,6 +232,121 @@ async def list_documents(
 
 
 # ---------------------------------------------------------------------------
+# GET /api/documents/from-mail
+#
+# Everything that arrived by email, with what became of it: who sent it, what
+# OCR read, where SAP routed it, and which document it ended up as. The web
+# history answers "what did we process"; this answers "what did the mailbox
+# bring us, and did it land" — the question people actually ask when a vendor
+# says they emailed an invoice.
+# ---------------------------------------------------------------------------
+
+@router.get("/from-mail")
+async def documents_from_mail(
+    current_user: CurrentUser,
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=25, ge=1, le=100),
+    outcome: str | None = Query(default=None, description="posted | awaiting | held | failed"),
+) -> dict[str, Any]:
+    from sqlalchemy import func, select
+
+    from src.models.document import DocumentRow
+
+    stmt = select(DocumentRow).where(DocumentRow.source == "email")
+    count_stmt = select(func.count()).select_from(DocumentRow).where(DocumentRow.source == "email")
+
+    user_tenant = getattr(current_user, "tenant_id", None)
+    if user_tenant:
+        stmt = stmt.where(DocumentRow.tenant_id == user_tenant)
+        count_stmt = count_stmt.where(DocumentRow.tenant_id == user_tenant)
+    if current_user.role == "operator":
+        # Operators see what they sent, matching the rule on the main list.
+        stmt = stmt.where(DocumentRow.uploaded_by == current_user.sub)
+        count_stmt = count_stmt.where(DocumentRow.uploaded_by == current_user.sub)
+
+    stmt = stmt.order_by(DocumentRow.uploaded_at.desc()).offset((page - 1) * limit).limit(limit)
+
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(stmt)).scalars().all()
+        total = (await session.execute(count_stmt)).scalar() or 0
+
+    items = [_mail_item(serialize_doc(r.to_dict())) for r in rows]
+    if outcome:
+        items = [i for i in items if i["outcome"] == outcome]
+
+    return {
+        "documents": items,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": math.ceil(total / limit) if total else 1,
+    }
+
+
+def _mail_item(doc: dict[str, Any]) -> dict[str, Any]:
+    """Flatten one document into the columns this view needs.
+
+    Assembled server-side so the page renders a table rather than digging
+    through four nested blobs to answer "did it post".
+    """
+    extracted = doc.get("extracted") or {}
+    pipeline  = doc.get("pipeline") or {}
+    routing   = pipeline.get("routing") or {}
+    autopost  = pipeline.get("autopost") or {}
+    meta      = doc.get("source_metadata") or {}
+    miro      = doc.get("miro_posting") or {}
+    grn       = doc.get("grn_posting") or {}
+    fb60      = doc.get("fb60_posting") or {}
+
+    # What was actually done, in the order a reader cares about: a posted
+    # document is finished, a held one needs a person, everything else is still
+    # moving or has failed.
+    if miro.get("status") == "success" or fb60.get("status") == "success":
+        outcome, action = "posted", "Posted to SAP"
+    elif doc.get("status") == "failed":
+        outcome, action = "failed", "Failed"
+    elif routing.get("route") == "hold":
+        outcome, action = "held", "Needs attention"
+    elif autopost.get("decision") == "manual_approval_required":
+        outcome, action = "awaiting", "Awaiting approval"
+    else:
+        outcome, action = "processing", "Processing"
+
+    failed_gates = [g["gate"] for g in (autopost.get("gates") or []) if not g.get("passed")]
+
+    return {
+        "document_id":  doc.get("document_id"),
+        "status":       doc.get("status"),
+        "received_at":  doc.get("uploaded_at"),
+        # From the mail itself
+        "sender":       doc.get("uploaded_by"),
+        "subject":      meta.get("subject", ""),
+        "mailbox":      meta.get("mailbox", ""),
+        "sender_trusted": meta.get("sender_trusted"),
+        "attachment":   (doc.get("file") or {}).get("original_name", ""),
+        # What OCR read
+        "invoice_no":   extracted.get("invoice_no", ""),
+        "vendor_name":  extracted.get("vendor_name", ""),
+        "gross_amount": extracted.get("gross_amount", ""),
+        "confidence":   extracted.get("confidence_score"),
+        "line_items":   len(extracted.get("line_items") or []),
+        # Where it went
+        "po_number":    routing.get("po_number") or extracted.get("po_number", ""),
+        "route":        routing.get("route", ""),
+        "invoice_subtype": doc.get("invoice_subtype"),
+        "tcode":        doc.get("tcode", ""),
+        "reason":       routing.get("reason", ""),
+        # What happened
+        "outcome":      outcome,
+        "action":       action,
+        "decision":     autopost.get("decision", ""),
+        "failed_gates": failed_gates,
+        "grn_number":   grn.get("grn_number", ""),
+        "miro_number":  miro.get("miro_number", "") or fb60.get("fb60_number", ""),
+    }
+
+
+# ---------------------------------------------------------------------------
 # GET /api/documents/{document_id}
 # ---------------------------------------------------------------------------
 
