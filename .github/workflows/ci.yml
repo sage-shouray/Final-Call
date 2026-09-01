@@ -120,6 +120,9 @@ jobs:
       - name: Type check
         run: npm run type-check
 
+      - name: Tests
+        run: npm run test
+
       - name: Build
         # The gate that matters: `tsc && vite build` failed on unused imports for
         # an unknown period, meaning no production bundle could be produced.
