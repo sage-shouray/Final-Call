@@ -158,3 +158,34 @@ async def test_disabled_flag_overrides_a_perfect_document(monkeypatch: pytest.Mo
     assert all(g["passed"] for g in result["gates"])
     assert result["auto_post"] is False
     assert result["decision"] == "manual_approval_required"
+
+
+# ── No value limit ───────────────────────────────────────────────────────────
+
+async def test_a_ceiling_of_zero_lets_any_amount_post(monkeypatch: pytest.MonkeyPatch):
+    """0 turns the value limit off: the remaining gates carry the whole burden."""
+    from src.config import settings
+
+    monkeypatch.setattr(settings, "AUTO_POST_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTO_POST_MIN_CONFIDENCE", 0.85)
+    monkeypatch.setattr(settings, "AUTO_POST_MAX_AMOUNT", 0.0)
+
+    result = await evaluate(make_doc(gross="702100.00", po_gross="702100.00"))
+
+    assert gate(result, "within_auto_post_ceiling")["passed"] is True
+    assert "No value limit" in gate(result, "within_auto_post_ceiling")["detail"]
+    assert result["auto_post"] is True
+
+
+async def test_removing_the_ceiling_does_not_weaken_the_other_gates(monkeypatch: pytest.MonkeyPatch):
+    """A large invoice may now post, but only if it is otherwise correct."""
+    from src.config import settings
+
+    monkeypatch.setattr(settings, "AUTO_POST_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTO_POST_MAX_AMOUNT", 0.0)
+    monkeypatch.setattr(settings, "AUTO_POST_MIN_CONFIDENCE", 0.85)
+
+    # Same large amount, but the invoice exceeds what the PO authorises.
+    result = await evaluate(make_doc(gross="999999.00", po_gross="702100.00"))
+    assert result["auto_post"] is False
+    assert gate(result, "within_po_value")["passed"] is False

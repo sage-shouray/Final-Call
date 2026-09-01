@@ -142,13 +142,17 @@ async def evaluate(doc: dict[str, Any]) -> dict[str, Any]:
     ))
 
     # ── 8. Value ceiling — high-value invoices always get a human ─────────
+    # A ceiling of 0 turns the value limit off entirely: any amount may post
+    # unattended, and the remaining gates carry the whole burden of correctness.
     ceiling = _dec(settings.AUTO_POST_MAX_AMOUNT)
     within_ceiling = ceiling <= 0 or inv_gross <= ceiling
-    gates.append(_gate(
-        "within_auto_post_ceiling", within_ceiling,
-        f"Invoice {inv_gross:,.2f} exceeds the auto-post ceiling of {ceiling:,.2f}."
-        if not within_ceiling else f"Within the auto-post ceiling ({ceiling:,.2f}).",
-    ))
+    if ceiling <= 0:
+        detail = "No value limit — any amount may post automatically."
+    elif within_ceiling:
+        detail = f"Within the auto-post ceiling ({ceiling:,.2f})."
+    else:
+        detail = f"Invoice {inv_gross:,.2f} exceeds the auto-post ceiling of {ceiling:,.2f}."
+    gates.append(_gate("within_auto_post_ceiling", within_ceiling, detail))
 
     failed = [g["gate"] for g in gates if not g["passed"]]
     enabled = settings.AUTO_POST_ENABLED
