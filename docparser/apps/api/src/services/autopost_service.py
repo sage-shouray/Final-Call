@@ -35,6 +35,89 @@ def _gate(name: str, passed: bool, detail: str = "") -> dict[str, Any]:
     return {"gate": name, "passed": passed, "detail": detail}
 
 
+# Two kinds of gate, and the difference decides who may override what.
+#
+# Most gates express policy or confidence: the extraction was blurry, the value
+# is above the ceiling for unattended posting, the sender is not on the vendor
+# allowlist. A reviewer looking at the invoice can reasonably say "I have read
+# it, it is correct, post it" — that is what review is for.
+#
+# These four are different. Each one means the invoice contradicts what SAP
+# already holds: a different vendor, more than the PO authorises, a different
+# tax treatment, or an invoice already posted once. No amount of human
+# confidence makes those safe, because the disagreement is with the purchase
+# order, not with the reader. Posting anyway puts a document in the ledger that
+# does not reconcile, which is the failure this system exists to prevent.
+#
+# So these block every posting path, automatic and manual alike. The way past
+# one is to correct the invoice or the PO and re-validate — never to approve.
+BLOCKING_GATES = frozenset({
+    "vendor_match",
+    "within_po_value",
+    "tax_matches_po",
+    "not_duplicate",
+})
+
+
+async def blocking_failures(doc: dict[str, Any]) -> list[dict[str, Any]]:
+    """Gates that disagree with SAP and must stop any posting.
+
+    Returns the failing gates with their detail text, so the caller can tell the
+    user exactly which figure disagrees rather than "validation failed".
+
+    Evaluated independently of AUTO_POST_ENABLED: the gates are computed the
+    same way whether or not unattended posting is switched on, because this
+    question is about the data, not about the automation policy.
+    """
+    result = await evaluate(doc)
+    return [
+        g for g in result["gates"]
+        if g["gate"] in BLOCKING_GATES and not g["passed"]
+    ]
+
+
+def _po_tax_rate(po_data: dict[str, Any]) -> Decimal | None:
+    """Tax rate the PO expects, derived from its own figures.
+
+    Deliberately not read from TAX_CODE: the code is a customising key ("R1")
+    whose rate lives in SAP, differs per client, and would need a mapping table
+    this application does not own. Gross minus net over net is the same number
+    without the lookup.
+
+    Summed over the lines rather than taken from the header, because the header
+    NET_AMOUNT comes back as 0.00 on some POs while the lines carry the value.
+    """
+    lines = po_data.get("PO_LINE_ITEMS") or []
+    net = sum((_dec(li.get("NET_AMOUNT")) for li in lines), Decimal("0"))
+    gross = sum((_dec(li.get("GROSS_AMOUNT")) for li in lines), Decimal("0"))
+    if not net:
+        net = _dec(po_data.get("NET_AMOUNT"))
+        gross = _dec(po_data.get("GROSS_AMOUNT"))
+    if net <= 0 or gross <= 0:
+        return None
+    return (gross - net) / net
+
+
+def _invoice_tax_rate(extracted: dict[str, Any]) -> Decimal | None:
+    """Tax rate actually charged on the invoice.
+
+    Prefers the explicit tax components; falls back to gross minus taxable for
+    invoices where the model reported a total without the breakdown.
+    """
+    taxable = _dec(extracted.get("taxable_amount"))
+    if taxable <= 0:
+        return None
+    components = sum(
+        (_dec(extracted.get(f)) for f in
+         ("cgst_amount", "sgst_amount", "igst_amount", "cess_amount")),
+        Decimal("0"),
+    )
+    tax = components if components > 0 else _dec(extracted.get("gross_amount")) - taxable
+    if tax < 0:
+        return None
+    return tax / taxable
+
+
 async def evaluate(doc: dict[str, Any]) -> dict[str, Any]:
     """Decide whether `doc` may post automatically.
 
@@ -83,15 +166,54 @@ async def evaluate(doc: dict[str, Any]) -> dict[str, Any]:
         ))
 
     # ── 4. Invoice value within the PO ────────────────────────────────────
+    # A ceiling, not an equality check: a partial delivery legitimately invoices
+    # less than the PO authorises. The wording says so, because "1,000 vs 1,180 —
+    # passed" otherwise reads as though the two had been found to agree.
     inv_gross = _dec(extracted.get("gross_amount"))
-    po_gross = _dec((routing.get("po_data") or {}).get("GROSS_AMOUNT"))
+    po_data = routing.get("po_data") or {}
+    po_gross = _dec(po_data.get("GROSS_AMOUNT"))
     if route == Route.FB60.value:
         gates.append(_gate("within_po_value", True, "Non-PO invoice — no PO ceiling."))
     else:
         gates.append(_gate(
             "within_po_value", bool(po_gross) and inv_gross <= po_gross + Decimal("0.01"),
-            f"Invoice {inv_gross:,.2f} vs PO {po_gross:,.2f}.",
+            f"Invoice {inv_gross:,.2f} is within the PO ceiling of {po_gross:,.2f}."
+            if po_gross and inv_gross <= po_gross + Decimal("0.01")
+            else f"Invoice {inv_gross:,.2f} exceeds the PO value of {po_gross:,.2f}."
+            if po_gross else "PO carries no gross value — cannot check the ceiling.",
         ))
+
+    # ── 4b. Tax treatment agrees with the PO ──────────────────────────────
+    # The ceiling above is blind to a pure tax discrepancy: an invoice claiming
+    # exemption on a taxable PO is *under* the ceiling and sails through, then
+    # posts a tax difference into SAP. Quantity and price can match perfectly
+    # while the tax code does not.
+    #
+    # Compared as a rate rather than an amount, so the check is independent of
+    # how much was delivered — a half-shipment at the same tax code still agrees.
+    if route == Route.FB60.value:
+        gates.append(_gate("tax_matches_po", True, "Non-PO invoice — no PO tax code to match."))
+    else:
+        po_rate = _po_tax_rate(po_data)
+        inv_rate = _invoice_tax_rate(extracted)
+        if po_rate is None or inv_rate is None:
+            gates.append(_gate(
+                "tax_matches_po", False,
+                "Cannot determine the tax rate on the invoice or the PO — "
+                "a tax difference would post unchecked.",
+            ))
+        else:
+            # Half a percentage point absorbs rounding on split CGST/SGST lines
+            # without admitting a genuine rate difference (the smallest real gap
+            # between Indian GST slabs is 5 points).
+            agrees = abs(po_rate - inv_rate) <= Decimal("0.005")
+            gates.append(_gate(
+                "tax_matches_po", agrees,
+                f"Tax rate {inv_rate:.1%} on the invoice matches the PO."
+                if agrees else
+                f"Invoice is taxed at {inv_rate:.1%} but the PO expects "
+                f"{po_rate:.1%} — the difference is tax, not quantity or price.",
+            ))
 
     # ── 5. Goods receipt / service entry confirmed ────────────────────────
     # Read against the route, not in isolation. On migo_then_miro the missing GR

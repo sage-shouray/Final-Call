@@ -8,3 +8,6 @@
 
 # Scanner working directory
 .scannerwork/
+
+# k6 summary exports
+docparser/loadtest/*.json

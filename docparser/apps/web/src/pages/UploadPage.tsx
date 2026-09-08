@@ -12,6 +12,7 @@ import { FileDropzone }    from '@/components/upload/FileDropzone';
 import { Skeleton }        from '@/components/ui/Skeleton';
 import { ExtractedDataForm } from '@/components/upload/ExtractedDataForm';
 import { PipelineRail } from '@/components/upload/PipelineRail';
+import { PostingFailureModal, extractSapMessage } from '@/components/ui/PostingFailureModal';
 import { NonPOInvoiceForm }  from '@/components/upload/NonPOInvoiceForm';
 import { SalesOrderForm }    from '@/components/upload/SalesOrderForm';
 import { ValidationPanel, ValidationLoading } from '@/components/upload/ValidationPanel';
@@ -175,6 +176,10 @@ export default function UploadPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const pollRef                       = useRef<ReturnType<typeof setInterval>>();
 
+  // The blocking dialog for a posting failure. A toast alone was easy to miss
+  // and left no trace once it faded — this stays on screen until acknowledged.
+  const [postingFailure, setPostingFailure] = useState<{ title: string; reason: string } | null>(null);
+
   // Tab title
   useEffect(() => {
     document.title = stepToTabTitle(state.step);
@@ -212,7 +217,10 @@ export default function UploadPage() {
       fetchDocumentAndAdvance(state.documentId, 'complete');
     }
     if (status === DocumentStatus.FAILED) {
-      toast.error('Processing failed. Please try again.');
+      setPostingFailure({
+        title:  'Posting Failed',
+        reason: extractSapMessage(null, 'SAP rejected this document. Check the error log for details.'),
+      });
       setState((s) => ({ ...s, step: 'upload' }));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -266,7 +274,10 @@ export default function UploadPage() {
         } else if (s === DocumentStatus.SIMULATED && state.step === 'posting') {
           // F-26 posting failed — worker reverted status back to SIMULATED
           clearInterval(pollRef.current);
-          toast.error(doc.f26_posting?.message || 'SAP posting failed. Please retry.');
+          setPostingFailure({
+            title:  'Payment Posting Failed',
+            reason: doc.f26_posting?.message || 'SAP rejected this payment posting.',
+          });
           setState((prev) => ({ ...prev, step: 'validated', document: doc }));
         } else if (s === DocumentStatus.POSTED && state.step === 'posting') {
           clearInterval(pollRef.current);
@@ -277,17 +288,30 @@ export default function UploadPage() {
         } else if (s === DocumentStatus.EXTRACTED && state.step === 'posting') {
           // FB60 failed — worker reverted status back to EXTRACTED
           clearInterval(pollRef.current);
-          const errMsg = doc.fb60_posting?.message || 'SAP rejected the posting. Fix the errors and retry.';
-          toast.error(errMsg, { duration: 8000 });
+          setPostingFailure({
+            title:  'FB60 Posting Failed',
+            reason: doc.fb60_posting?.message || 'SAP rejected the posting. Fix the errors and retry.',
+          });
           setState((prev) => ({ ...prev, step: 'extracted', document: doc }));
         } else if (s === DocumentStatus.VALIDATED && state.step === 'posting') {
           // MIRO failed — worker reverted status back to VALIDATED
           clearInterval(pollRef.current);
-          toast.error('SAP posting failed. Please retry.');
+          setPostingFailure({
+            title:  'MIRO Posting Failed',
+            reason: extractSapMessage(
+              (doc.miro_posting as { sap_response?: unknown } | undefined)?.sap_response,
+              'SAP rejected the MIRO posting.',
+            ),
+          });
           setState((prev) => ({ ...prev, step: 'validated', document: doc }));
         } else if (s === DocumentStatus.FAILED) {
           clearInterval(pollRef.current);
-          toast.error('Processing failed. Please try again.');
+          const lastError = doc.error_log?.length ? doc.error_log[doc.error_log.length - 1] : null;
+          setPostingFailure({
+            title:  'Posting Failed',
+            reason: (lastError as { error?: string } | null)?.error
+                    || 'SAP rejected this document. Check the error log for details.',
+          });
           setState((prev) => ({ ...prev, step: 'upload' }));
         }
       } catch { /* ignore transient errors */ }
@@ -1007,6 +1031,13 @@ export default function UploadPage() {
           </div>
         )}
       </div>
+
+      <PostingFailureModal
+        open={!!postingFailure}
+        onClose={() => setPostingFailure(null)}
+        title={postingFailure?.title ?? 'Posting Failed'}
+        reason={postingFailure?.reason ?? ''}
+      />
     </>
   );
 }

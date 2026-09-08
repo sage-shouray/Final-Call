@@ -35,6 +35,35 @@ def _gr_year(gr_date: str) -> str:
     return str(datetime.now(UTC).year)
 
 
+def _gr_reference(sap_line: Any) -> tuple[str, str, str]:
+    """The goods-receipt reference for one line: (REF_DOC, REF_DOC_YEAR, REF_DOC_IT).
+
+    All three or none. They identify the material document an invoice line is
+    matched against, and SAP only accepts them when the PO line carries GR-based
+    invoice verification (EKPO-WEBRE). Sending a partial set fails twice over:
+
+        Enter goods receipt data only when working with GR-based IV
+        Fill in mandatory field REF_DOC, REF_DOC_YEAR, REF_DOC_IT
+
+    — the first because any GR data at all is wrong on a non-GR-based line, the
+    second because having supplied one field, SAP requires the other two.
+
+    That is what happened: the year defaulted to the current year while the
+    other two defaulted to empty, so every MIRO against a PO with no goods
+    receipt sent "2026" on its own and was rejected.
+
+    Keyed on GR_NUMBER rather than on the GRN block being present, because a
+    service line carries an SES number in SSES_NO and leaves GR_NUMBER empty —
+    a truthy GRN block with nothing usable in it.
+    """
+    for grn in (getattr(sap_line, "GRN", None) or []):
+        number = (grn.GR_NUMBER or "").strip()
+        # All-zeros is SAP's way of saying "no document", not a document id.
+        if number and number.strip("0"):
+            return number, _gr_year(grn.GR_DATE), (grn.GR_ITEM_NUMBER or "").strip()
+    return "", "", ""
+
+
 def build_miro_payload(
     extracted: dict[str, Any],
     sap_po: SAPPOResponse,
@@ -58,15 +87,8 @@ def build_miro_payload(
     for idx, sap_line in enumerate(sap_po.PO_LINE_ITEMS):
         invoice_doc_no = f"{(idx + 1) * 10:06d}"
 
-        # GRN reference from first GRN entry for this SAP line
-        reference_no = ""
-        reference_document_year = str(datetime.now(UTC).year)
-        reference_doc_it = ""
-        if sap_line.GRN:
-            first_grn = sap_line.GRN[0]
-            reference_no = first_grn.GR_NUMBER.strip()
-            reference_document_year = _gr_year(first_grn.GR_DATE)
-            reference_doc_it = first_grn.GR_ITEM_NUMBER.strip()
+        # GR reference — empty when no goods receipt exists, never partial.
+        reference_no, reference_document_year, reference_doc_it = _gr_reference(sap_line)
 
         # Tax code exactly from SAP PO; V0 (zero-rate) for lines with no tax code
         tax_code = sap_line.TAX_CODE.strip()  # blank for zero-tax lines
@@ -223,14 +245,11 @@ def build_freight_miro_payload(
     for idx, sap_line in enumerate(sap_po.PO_LINE_ITEMS):
         invoice_doc_no = f"{(idx + 1) * 10:06d}"
 
-        reference_no = ""
-        reference_document_year = str(datetime.now(UTC).year)
-        reference_doc_it = "0001"
-        if sap_line.GRN:
-            first_grn = sap_line.GRN[0]
-            reference_no = first_grn.GR_NUMBER.strip()
-            reference_document_year = _gr_year(first_grn.GR_DATE)
-            reference_doc_it = first_grn.GR_ITEM_NUMBER.strip() or "0001"
+        # As above — the "0001" default made this worse, sending two of the
+        # three fields on a line that should carry none.
+        reference_no, reference_document_year, reference_doc_it = _gr_reference(sap_line)
+        if reference_no and not reference_doc_it:
+            reference_doc_it = "0001"
 
         tax_code = sap_line.TAX_CODE.strip()
         item_amount = _safe_float(sap_line.NET_AMOUNT)

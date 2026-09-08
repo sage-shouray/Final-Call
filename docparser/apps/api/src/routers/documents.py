@@ -570,6 +570,35 @@ async def compare_credit_note_document(
 # POST /api/documents/{document_id}/post-miro
 # ---------------------------------------------------------------------------
 
+async def _assert_matches_sap(doc: dict[str, Any]) -> None:
+    """Refuse to post a document whose figures disagree with the purchase order.
+
+    The auto-post gates decide whether a posting may happen *unattended*. That
+    left a hole: approving by hand skipped them entirely, so an invoice SAP had
+    already contradicted could still be posted with one click. PO 4500022798 was
+    the case that showed it — 1,000.00 billed as exempt against a PO of 1,000.00
+    plus 18% tax, a 180.00 tax difference that nothing on the manual path looked at.
+
+    Only the gates in BLOCKING_GATES are enforced here. A reviewer may still
+    override a low-confidence extraction or a value above the unattended
+    ceiling; those are judgements about reading the invoice. They may not
+    override a disagreement with SAP's own record, because no amount of reading
+    makes the two agree. Fix the invoice or the PO, then re-validate.
+    """
+    from src.services.autopost_service import blocking_failures
+
+    failures = await blocking_failures(doc)
+    if not failures:
+        return
+
+    reasons = " ".join(f["detail"] for f in failures if f.get("detail"))
+    raise ValidationError(
+        "This invoice does not match the purchase order in SAP, so it cannot be "
+        f"posted. {reasons} Correct the invoice or the PO and re-validate.",
+        error_code="SAP_DATA_MISMATCH",
+    )
+
+
 @router.post("/{document_id}/post-miro", response_model=MIROTriggerResponse, status_code=202)
 async def post_to_miro(
     document_id: str,
@@ -604,6 +633,9 @@ async def post_to_miro(
                     + " — re-run validation before posting to MIRO.",
                     error_code="SERVICE_PO_VALIDATION_FAILED",
                 )
+
+        # Applies to every subtype, not just service POs.
+        await _assert_matches_sap(doc)
 
         await repo.update_status(doc["id"], DocumentStatus.POSTING)
         await session.commit()
@@ -665,6 +697,9 @@ async def park_miro(
                 f"Document must be VALIDATED (current: {current_status})",
                 error_code="INVALID_STATUS_TRANSITION",
             )
+        # Parking still puts the document into SAP for someone to complete.
+        await _assert_matches_sap(doc)
+
         await repo.update_status(doc["id"], DocumentStatus.POSTING)
         await session.commit()
 
@@ -786,6 +821,9 @@ async def process_document(
     if current_status in {DocumentStatus.POSTING, DocumentStatus.GR_POSTING}:
         raise ValidationError("Processing is already in progress", error_code="ALREADY_POSTING")
 
+    # This route ends in a MIRO posting, so it carries the same prohibition.
+    await _assert_matches_sap(doc)
+
     routing = (doc.get("pipeline") or {}).get("routing") or {}
     route = routing.get("route") or ""
 
@@ -871,6 +909,10 @@ async def post_to_grn(
                 f"Document must be EXTRACTED, VALIDATED or GR_POSTED (current: {current_status})",
                 error_code="INVALID_STATUS_TRANSITION",
             )
+        # A goods receipt against a PO the invoice disagrees with creates stock
+        # movement that the invoice can never be matched to.
+        await _assert_matches_sap(doc)
+
         await repo.update_status(doc["id"], DocumentStatus.GR_POSTING)
         await session.commit()
 
@@ -898,6 +940,11 @@ async def post_fb60(document_id: str, form_data: dict, current_user: CurrentUser
     if not doc:
         raise NotFoundError(f"Document {document_id} not found")
     _assert_tenant(doc, current_user)
+
+    # A non-PO invoice has no purchase order to disagree with, so the PO gates
+    # pass on their own. The one that still bites is not_duplicate — paying the
+    # same non-PO invoice twice is the failure mode here.
+    await _assert_matches_sap(doc)
 
     current_status = DocumentStatus(doc.get("status", ""))
     if current_status not in {DocumentStatus.EXTRACTED, DocumentStatus.FAILED}:

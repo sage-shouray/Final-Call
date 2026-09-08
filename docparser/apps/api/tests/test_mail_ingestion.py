@@ -212,10 +212,11 @@ def gate_doc():
             "source": source,
             "source_metadata": meta,
             "extracted": {"invoice_no": "INV-1", "vendor_gstin": "27A",
-                          "gross_amount": "1000.00", "confidence_score": 1.0},
+                          "gross_amount": "1000.00", "taxable_amount": "1000.00",
+                          "confidence_score": 1.0},
             "pipeline": {"routing": {
                 "route": "miro_direct", "resolved": True, "vendor_gstin": "27A",
-                "po_data": {"GROSS_AMOUNT": "1000.00"},
+                "po_data": {"GROSS_AMOUNT": "1000.00", "NET_AMOUNT": "1000.00"},
                 "confirmation": {"all_confirmed": True, "lines": [], "missing": []},
             }},
         }

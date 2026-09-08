@@ -89,3 +89,19 @@ def po_response(
         "NET_AMOUNT": net_amount,
         "PO_LINE_ITEMS": lines,
     }
+
+# ── Hypothesis ───────────────────────────────────────────────────────────────
+
+from hypothesis import HealthCheck, settings as hyp_settings  # noqa: E402
+
+# The too_slow health check times *input generation*, so it measures how busy
+# the machine is rather than anything about the code under test. On a loaded
+# laptop or a shared CI runner it fires at random, which turns a property test
+# into a flaky one — the worst kind, because people learn to re-run rather than
+# read it. The properties themselves still run their full example budget.
+hyp_settings.register_profile(
+    "default",
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.function_scoped_fixture],
+    deadline=None,
+)
+hyp_settings.load_profile("default")

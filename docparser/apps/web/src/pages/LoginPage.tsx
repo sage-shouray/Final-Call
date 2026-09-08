@@ -93,7 +93,7 @@ export default function LoginPage() {
               Member Login
             </h1>
             <p className="mt-1.5 text-sm text-slate-500">
-              Brought to you by Sage Technology
+              Brought to you by {APP_COMPANY}
             </p>
 
             {/* Form */}

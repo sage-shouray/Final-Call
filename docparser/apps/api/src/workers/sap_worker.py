@@ -372,6 +372,26 @@ async def run_miro_direct(document_id: str, posted_by: str = "system") -> None:
                 bound_log.error("document not found — MIRO posting aborted")
                 return
 
+            # Last line of defence. The HTTP endpoints check this too, but the
+            # rule is about the data rather than about who asked, so it is
+            # enforced where the posting actually happens — a future caller,
+            # retry or queued task cannot route around it.
+            from src.services.autopost_service import blocking_failures
+            _mismatch = await blocking_failures(doc)
+            if _mismatch:
+                _why = " ".join(f["detail"] for f in _mismatch if f.get("detail"))
+                bound_log.error(
+                    "posting refused — invoice does not match SAP",
+                    failed_gates=[f["gate"] for f in _mismatch],
+                )
+                await doc_repo.update_status(
+                    doc["id"], DocumentStatus.FAILED,
+                    error_entry={"stage": "miro",
+                                 "error": f"Invoice does not match the purchase order in SAP. {_why}"},
+                )
+                await session.commit()
+                return
+
             doc_id = doc["id"]
             extracted: dict[str, Any] = doc.get("extracted") or {}
             sap_validation: dict[str, Any] = doc.get("sap_validation") or {}
@@ -502,6 +522,26 @@ async def run_miro_park_direct(document_id: str, posted_by: str = "system") -> N
             doc = await doc_repo.find_by_document_id(document_id)
             if not doc:
                 bound_log.error("document not found — MIRO parking aborted")
+                return
+
+            # Last line of defence. The HTTP endpoints check this too, but the
+            # rule is about the data rather than about who asked, so it is
+            # enforced where the posting actually happens — a future caller,
+            # retry or queued task cannot route around it.
+            from src.services.autopost_service import blocking_failures
+            _mismatch = await blocking_failures(doc)
+            if _mismatch:
+                _why = " ".join(f["detail"] for f in _mismatch if f.get("detail"))
+                bound_log.error(
+                    "posting refused — invoice does not match SAP",
+                    failed_gates=[f["gate"] for f in _mismatch],
+                )
+                await doc_repo.update_status(
+                    doc["id"], DocumentStatus.FAILED,
+                    error_entry={"stage": "miro_park",
+                                 "error": f"Invoice does not match the purchase order in SAP. {_why}"},
+                )
+                await session.commit()
                 return
 
             doc_id = doc["id"]
