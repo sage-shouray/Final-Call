@@ -371,6 +371,80 @@ export interface FileMetadata {
   mime_type:     string;
 }
 
+// ─── Ingest pipeline ─────────────────────────────────────────────────────────
+// Written by the two-track upload pass: a fast identity scrape + SAP routing
+// runs alongside OCR, so the route is known ~1 s in while extraction is still
+// running. Every field below is filled server-side; the UI only renders it.
+
+/** Where the document is headed, decided by SAP rather than by the user. */
+export type PipelineRoute = 'miro_direct' | 'migo_then_miro' | 'fb60' | 'hold';
+
+export interface PipelineIdentity {
+  po_number:      string;
+  invoice_no:     string;
+  elapsed_ms:     number;
+  text_chars:     number;
+  has_text_layer: boolean;
+  po_candidates:  string[];
+}
+
+/** Per-line goods-receipt (material) or service-entry-sheet (service) status. */
+export interface RoutingConfirmationLine {
+  po_item:     string;
+  kind:        'GR' | 'SES';
+  confirmed:   boolean;
+  documents:   string[];
+  gr_expected: string;
+}
+
+export interface PipelineRouting {
+  route:            PipelineRoute;
+  tcode:            string;
+  reason:           string;
+  resolved:         boolean;
+  po_number:        string;
+  elapsed_ms:       number;
+  invoice_subtype:  string;
+  is_service?:      boolean;
+  vendor_name?:     string;
+  vendor_gstin?:    string;
+  company_code?:    string;
+  confirmation?:    { lines: RoutingConfirmationLine[]; missing: string[]; all_confirmed: boolean };
+  candidates_tried?: string[];
+  /** True only when SAP could not be reached — a rejected PO is not retryable. */
+  retryable?:       boolean;
+  sap_unavailable?: boolean;
+  rejected_by_sap?: string[];
+  lookup_errors?:   string[];
+}
+
+export interface AutoPostGate {
+  gate:   string;
+  detail: string;
+  passed: boolean;
+}
+
+export interface PipelineAutopost {
+  decision:     string;
+  summary:      string;
+  enabled:      boolean;
+  auto_post:    boolean;
+  route:        string;
+  gates:        AutoPostGate[];
+  failed_gates: string[];
+}
+
+export interface DocumentPipeline {
+  started_at?:        string;
+  completed_at?:      string;
+  subtype_suggested?: string;
+  /** Set when extraction produced nothing, so the gates were not evaluated. */
+  skipped_reason?:    string;
+  identity?:          PipelineIdentity;
+  routing?:           PipelineRouting;
+  autopost?:          PipelineAutopost;
+}
+
 export interface Document {
   id:               string;
   document_id:      string;
@@ -391,6 +465,7 @@ export interface Document {
   so_posting:     Record<string, unknown> | null;
   f26_simulation: F26Simulation | null;
   f26_posting:    F26Posting | null;
+  pipeline:       DocumentPipeline | null;
   retry_count:    number;
   error_log:      ErrorEntry[];
   created_at:     string;

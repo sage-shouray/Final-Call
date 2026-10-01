@@ -424,14 +424,18 @@ def check_service_po_ceilings(
             continue
 
         po_qty = _dec(sap_line.ORDERED_QUANTITY)
-        po_amt = _dec(sap_line.NET_AMOUNT)
+        # Compare like with like. The extracted line `amount` is the gross for
+        # that line (tax included), so it belongs against the PO line's GROSS,
+        # not its NET: on an 18% GST line, 8,260 gross against 7,000 net looks
+        # like a 1,260 overrun when the two figures in fact agree exactly.
+        po_amt = _dec(sap_line.GROSS_AMOUNT) or _dec(sap_line.NET_AMOUNT)
         reason = ""
 
         if inv_qty > po_qty + Decimal("0.000001"):
             reason = f"Invoiced quantity {inv_qty} exceeds PO quantity {po_qty}"
             violations.append(_mismatch(f"line[{line_num}].quantity", str(inv_qty), str(po_qty), "error"))
         elif inv_amt > po_amt + Decimal("0.01"):
-            reason = f"Invoiced amount {inv_amt} exceeds PO line net {po_amt}"
+            reason = f"Invoiced amount {inv_amt} exceeds PO line total {po_amt}"
             violations.append(_mismatch(f"line[{line_num}].amount", str(inv_amt), str(po_amt), "error"))
 
         results.append({
@@ -453,6 +457,7 @@ async def post_service_po_lines(
     po_number: str,
     company_code: str = "",
     already_posted: dict[str, str] | None = None,
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """Post the Service PO invoice, line by line, via ZSPO_VALD/SERV_PO_VAL.
 
@@ -470,7 +475,7 @@ async def post_service_po_lines(
     """
     from src.services.sap_service import get_sap_service
 
-    sap_service = get_sap_service()
+    sap_service = get_sap_service(tenant_id)
     lines: list[dict[str, Any]] = extracted.get("line_items") or []
     posted_before = {_norm_item(k): v for k, v in (already_posted or {}).items() if v}
 
@@ -482,7 +487,10 @@ async def post_service_po_lines(
     for line in lines:
         po_item = str(line.get("line_number") or "").strip()
         invoice_qty = _dec(line.get("quantity", "0"))
-        invoice_amount = _dec(line.get("amount", "0"))
+        # SERV_PO_VAL nets invoice_amount against AVAILABLE_NET, so it wants the
+        # line's taxable value, not its gross. Sending the gross on an 18% GST
+        # line overstates the invoice by the tax and reads as an overrun.
+        invoice_amount = _dec(line.get("taxable_amount", "0")) or _dec(line.get("amount", "0"))
 
         prior_miro = posted_before.get(_norm_item(po_item))
         if prior_miro:

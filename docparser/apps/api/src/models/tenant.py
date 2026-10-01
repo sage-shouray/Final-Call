@@ -47,10 +47,18 @@ class TenantApiConfigRow(Base):
     api_key:          Mapped[str]       = mapped_column(String, nullable=False)
     label:            Mapped[str]       = mapped_column(String, nullable=False, default="")
     workflow:         Mapped[str]       = mapped_column(String, nullable=False, default="")
+    # full_url is the endpoint exactly as the customer's SAP exposes it, query
+    # string included. It supersedes base_url/path/sap_client, which assumed one
+    # shared host and client 800 — an assumption that does not survive a second
+    # customer. The older columns are kept so existing rows keep working.
+    full_url:         Mapped[str]       = mapped_column(String, nullable=False, default="")
     base_url:         Mapped[str]       = mapped_column(String, nullable=False, default="")
     path:             Mapped[str]       = mapped_column(String, nullable=False, default="")
     method:           Mapped[str]       = mapped_column(String, nullable=False, default="POST")
     sap_client:       Mapped[str]       = mapped_column(String, nullable=False, default="800")
+    # The customer's own request shape, with {{placeholders}} where document
+    # data belongs. Empty means "use the built-in payload builder".
+    payload_template: Mapped[dict]      = mapped_column(JSONB, nullable=False, default=dict)
     auth_type:        Mapped[str]       = mapped_column(String, nullable=False, default="basic")
     username:         Mapped[str]       = mapped_column(String, nullable=False, default="")
     password:         Mapped[str]       = mapped_column(String, nullable=False, default="")
@@ -59,6 +67,15 @@ class TenantApiConfigRow(Base):
     last_tested_at:   Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_test_status: Mapped[str | None]      = mapped_column(String, nullable=True)
 
+    def _composed_url(self) -> str:
+        """The legacy base_url + path + sap-client form, for un-migrated rows."""
+        base = (self.base_url or "").strip().rstrip("/")
+        path = (self.path or "").strip().lstrip("/")
+        if not base or not path:
+            return ""
+        client = (self.sap_client or "").strip()
+        return f"{base}/{path}" + (f"?sap-client={client}" if client else "")
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id":               self.id,
@@ -66,16 +83,21 @@ class TenantApiConfigRow(Base):
             "api_key":          self.api_key,
             "label":            self.label,
             "workflow":         self.workflow,
+            # The endpoint that will actually be called: the stored full URL, or
+            # the older base+path+client composition for rows saved before it
+            # existed. A second "full_url" key used to appear later in this dict
+            # and silently overwrote whatever was saved.
+            "full_url":         self.full_url or self._composed_url(),
             "base_url":         self.base_url,
             "path":             self.path,
             "method":           self.method,
             "sap_client":       self.sap_client,
+            "payload_template": self.payload_template or {},
             "auth_type":        self.auth_type,
             "username":         self.username,
             "is_active":        self.is_active,
             "last_tested_at":   self.last_tested_at.isoformat() if self.last_tested_at else None,
             "last_test_status": self.last_test_status,
-            "full_url":         f"{self.base_url}/{self.path.lstrip('/')}?sap-client={self.sap_client}",
         }
 
 

@@ -24,6 +24,7 @@ const LoginPage          = lazy(() => import('@/pages/LoginPage'));
 const DashboardPage      = lazy(() => import('@/pages/DashboardPage'));
 const UploadPage         = lazy(() => import('@/pages/UploadPage'));
 const DocumentsPage      = lazy(() => import('@/pages/DocumentsPage'));
+const MailInboxPage      = lazy(() => import('@/pages/MailInboxPage'));
 const DocumentDetailPage = lazy(() => import('@/pages/DocumentDetailPage'));
 const NotFoundPage       = lazy(() => import('@/pages/NotFoundPage'));
 const SettingsPage       = lazy(() => import('@/pages/SettingsPage'));
@@ -100,6 +101,14 @@ const routes: RouteObject[] = [
         element: (
           <Suspense fallback={<PageFallback />}>
             <DocumentsPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/mail-inbox',
+        element: (
+          <Suspense fallback={<PageFallback />}>
+            <MailInboxPage />
           </Suspense>
         ),
       },

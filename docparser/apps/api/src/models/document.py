@@ -337,7 +337,14 @@ class DocumentRow(Base, TimestampMixin):
     so_posting:       Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     f26_simulation:   Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     f26_posting:      Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Ingest pipeline: fast identity scrape, SAP-derived routing, auto-post gates.
+    pipeline:         Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     tenant_id:        Mapped[str | None]  = mapped_column(String, nullable=True)
+    # How the document arrived: 'web' for an upload, 'email' for a mailbox pickup.
+    source:           Mapped[str]         = mapped_column(String, nullable=False, default="web")
+    # For email, the message id — so a document can be traced to the mail that carried it.
+    source_reference: Mapped[str]         = mapped_column(String, nullable=False, default="")
+    source_metadata:  Mapped[dict]        = mapped_column(JSONB, nullable=False, default=dict)
     page_count:       Mapped[int]         = mapped_column(Integer, nullable=False, default=0)
     retry_count:      Mapped[int]         = mapped_column(Integer, nullable=False, default=0)
     error_log:        Mapped[list]      = mapped_column(JSONB, nullable=False, default=list)
@@ -373,7 +380,11 @@ class DocumentRow(Base, TimestampMixin):
             "so_posting":      self.so_posting,
             "f26_simulation":  self.f26_simulation,
             "f26_posting":     self.f26_posting,
+            "pipeline":        self.pipeline,
             "tenant_id":       self.tenant_id,
+            "source":          self.source,
+            "source_reference": self.source_reference,
+            "source_metadata": self.source_metadata or {},
             "page_count":      self.page_count,
             "retry_count":     self.retry_count,
             "error_log":       self.error_log or [],

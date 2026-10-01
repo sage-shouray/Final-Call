@@ -330,9 +330,32 @@ async def update_company_api(tenant_id: str, api_key: str, body: dict[str, Any],
         )).scalar_one_or_none()
         if not api:
             raise HTTPException(status_code=404, detail="API config not found.")
-        for field in ("base_url", "path", "method", "sap_client", "auth_type", "username", "password", "is_active"):
+        for field in ("full_url", "base_url", "path", "method", "sap_client",
+                      "auth_type", "username", "password", "is_active"):
             if field in body:
                 setattr(api, field, body[field])
+
+        # The customer's own request shape. Validated on save rather than at
+        # posting time, so a typo in the pasted JSON is caught here instead of
+        # surfacing as a rejected invoice hours later.
+        if "payload_template" in body:
+            template = body["payload_template"]
+            if isinstance(template, str):
+                import json as _json
+                try:
+                    template = _json.loads(template) if template.strip() else {}
+                except _json.JSONDecodeError as exc:
+                    raise HTTPException(status_code=422, detail=f"Sample JSON is not valid: {exc}")
+            if not isinstance(template, dict):
+                raise HTTPException(status_code=422, detail="Sample JSON must be a JSON object.")
+            if template:
+                from src.services.payload_template import TemplateError, render
+                try:
+                    render(template, {})
+                except TemplateError as exc:
+                    raise HTTPException(status_code=422, detail=str(exc))
+            api.payload_template = template
+
         await session.commit()
         await session.refresh(api)
         return api.to_dict()
@@ -348,11 +371,14 @@ async def test_company_api(tenant_id: str, api_key: str, current_user: CurrentUs
         if not api:
             raise HTTPException(status_code=404, detail="API config not found.")
 
-        if not api.base_url:
-            return {"success": False, "message": "Base URL not configured."}
+        # Resolve exactly as the posting path does, so a green test here means
+        # the URL that will actually be called works — not a differently-built one.
+        from src.services.tenant_api_service import _compose_url
+        url = _compose_url(api)
+        if not url:
+            return {"success": False, "message": "Endpoint URL not configured."}
 
         import httpx
-        url = f"{api.base_url.rstrip('/')}/{api.path.lstrip('/')}?sap-client={api.sap_client}"
         auth = (api.username, api.password) if api.username else None
         try:
             async with httpx.AsyncClient(timeout=10.0, auth=auth) as client:

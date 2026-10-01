@@ -174,7 +174,10 @@ export default function DashboardPage() {
   const navigate = useNavigate();
 
   const { data: metrics, isLoading: metricsLoading } = useDashboardMetrics();
-  const { data: recent,  isLoading: docsLoading }    = useDocuments({ limit: 6, page: 1 });
+  // Ten rows rather than six: the two cards stacked beside this one run to
+  // roughly ten rows' height, so the table now fills the column instead of
+  // ending halfway down with white space under it.
+  const { data: recent,  isLoading: docsLoading }    = useDocuments({ limit: 10, page: 1 });
 
   // Tab title with pending count
   useEffect(() => {
@@ -256,7 +259,10 @@ export default function DashboardPage() {
         </div>
 
         {/* ── Two-column layout ─────────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_300px]">
+        {/* items-start: a grid stretches its children by default, which forced the
+            table card to the height of the taller sidebar and left a blank panel
+            below the last row whenever there were few documents. */}
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_300px]">
 
           {/* LEFT — Recent documents table */}
           <div className="rounded-xl bg-white shadow-soft ring-1 ring-neutral-200/70 overflow-hidden dark:bg-neutral-800 dark:ring-neutral-700/70 dark:shadow-none">

@@ -71,7 +71,8 @@ async def _run_validation(task: Task, document_id: str) -> None:
             await doc_repo.update_status(doc_id, DocumentStatus.VALIDATING)
             await session.commit()
 
-            sap_service = get_sap_service()
+            # Bind to the document's customer so the call goes to their SAP, not a shared one.
+            sap_service = get_sap_service(doc.get("tenant_id"))
             try:
                 sap_po = await sap_service.fetch_po_details(po_number)
             except Exception as sap_exc:
@@ -174,7 +175,8 @@ async def _run_miro_posting(task: Task, document_id: str, posted_by: str) -> Non
             await session.commit()
 
             from src.schemas.sap import SAPPOResponse
-            sap_service = get_sap_service()
+            # Bind to the document's customer so the call goes to their SAP, not a shared one.
+            sap_service = get_sap_service(doc.get("tenant_id"))
             sap_po = await sap_service.fetch_po_details(po_number) if po_number else SAPPOResponse()
 
             if (doc.get("invoice_subtype") or "") == InvoiceSubtype.SERVICE_PO:
@@ -185,6 +187,7 @@ async def _run_miro_posting(task: Task, document_id: str, posted_by: str) -> Non
                     extracted, po_number,
                     company_code=sap_po.COM_CODE.strip(),
                     already_posted=_already_posted_lines(doc),
+                    tenant_id=doc.get("tenant_id"),
                 )
                 success     = spo["all_posted"]
                 miro_number = spo["miro_number"]
@@ -298,7 +301,8 @@ async def run_validation_direct(document_id: str) -> None:
             await doc_repo.update_status(doc_id, DocumentStatus.VALIDATING)
             await session.commit()
 
-            sap_service = get_sap_service()
+            # Bind to the document's customer so the call goes to their SAP, not a shared one.
+            sap_service = get_sap_service(doc.get("tenant_id"))
 
             try:
                 sap_po = await sap_service.fetch_po_details(po_number)
@@ -368,6 +372,26 @@ async def run_miro_direct(document_id: str, posted_by: str = "system") -> None:
                 bound_log.error("document not found — MIRO posting aborted")
                 return
 
+            # Last line of defence. The HTTP endpoints check this too, but the
+            # rule is about the data rather than about who asked, so it is
+            # enforced where the posting actually happens — a future caller,
+            # retry or queued task cannot route around it.
+            from src.services.autopost_service import blocking_failures
+            _mismatch = await blocking_failures(doc)
+            if _mismatch:
+                _why = " ".join(f["detail"] for f in _mismatch if f.get("detail"))
+                bound_log.error(
+                    "posting refused — invoice does not match SAP",
+                    failed_gates=[f["gate"] for f in _mismatch],
+                )
+                await doc_repo.update_status(
+                    doc["id"], DocumentStatus.FAILED,
+                    error_entry={"stage": "miro",
+                                 "error": f"Invoice does not match the purchase order in SAP. {_why}"},
+                )
+                await session.commit()
+                return
+
             doc_id = doc["id"]
             extracted: dict[str, Any] = doc.get("extracted") or {}
             sap_validation: dict[str, Any] = doc.get("sap_validation") or {}
@@ -397,7 +421,8 @@ async def run_miro_direct(document_id: str, posted_by: str = "system") -> None:
             await doc_repo.update_status(doc_id, DocumentStatus.POSTING)
             await session.commit()
 
-            sap_service = get_sap_service()
+            # Bind to the document's customer so the call goes to their SAP, not a shared one.
+            sap_service = get_sap_service(doc.get("tenant_id"))
 
             if invoice_subtype == InvoiceSubtype.SERVICE_PO:
                 # Service PO posts through ZSPO_VALD/SERV_PO_VAL, which performs the
@@ -408,6 +433,7 @@ async def run_miro_direct(document_id: str, posted_by: str = "system") -> None:
                     extracted, po_number,
                     company_code=sap_po.COM_CODE.strip(),
                     already_posted=_already_posted_lines(doc),
+                    tenant_id=doc.get("tenant_id"),
                 )
                 posting_data = {
                     "posted_at":    spo_result["posted_at"],
@@ -498,6 +524,26 @@ async def run_miro_park_direct(document_id: str, posted_by: str = "system") -> N
                 bound_log.error("document not found — MIRO parking aborted")
                 return
 
+            # Last line of defence. The HTTP endpoints check this too, but the
+            # rule is about the data rather than about who asked, so it is
+            # enforced where the posting actually happens — a future caller,
+            # retry or queued task cannot route around it.
+            from src.services.autopost_service import blocking_failures
+            _mismatch = await blocking_failures(doc)
+            if _mismatch:
+                _why = " ".join(f["detail"] for f in _mismatch if f.get("detail"))
+                bound_log.error(
+                    "posting refused — invoice does not match SAP",
+                    failed_gates=[f["gate"] for f in _mismatch],
+                )
+                await doc_repo.update_status(
+                    doc["id"], DocumentStatus.FAILED,
+                    error_entry={"stage": "miro_park",
+                                 "error": f"Invoice does not match the purchase order in SAP. {_why}"},
+                )
+                await session.commit()
+                return
+
             doc_id = doc["id"]
             extracted: dict[str, Any] = doc.get("extracted") or {}
             sap_validation: dict[str, Any] = doc.get("sap_validation") or {}
@@ -506,7 +552,8 @@ async def run_miro_park_direct(document_id: str, posted_by: str = "system") -> N
             await doc_repo.update_status(doc_id, DocumentStatus.POSTING)
             await session.commit()
 
-            sap_service = get_sap_service()
+            # Bind to the document's customer so the call goes to their SAP, not a shared one.
+            sap_service = get_sap_service(doc.get("tenant_id"))
             sap_po = await sap_service.fetch_po_details(po_number) if po_number else SAPPOResponse()
             payload = build_miro_payload(extracted, sap_po, sap_validation)
             park_resp = await sap_service.park_miro(payload)

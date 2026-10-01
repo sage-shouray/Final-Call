@@ -40,7 +40,7 @@ log = structlog.get_logger(__name__)
 
 _GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
-# Key fields used for confidence calculation
+# Fields every invoice must carry, whatever its tax treatment.
 _CONFIDENCE_FIELDS = (
     "invoice_no",
     "invoice_date",
@@ -48,9 +48,13 @@ _CONFIDENCE_FIELDS = (
     "vendor_gstin",
     "gross_amount",
     "taxable_amount",
-    "cgst_amount",
-    "sgst_amount",
 )
+
+# Only expected when the invoice actually charges tax. A zero-rated (V0) or
+# export invoice has no CGST/SGST/IGST line, so counting their absence as
+# missing data capped every such invoice at 75-80% — below the auto-post
+# threshold — despite the extraction being perfect.
+_TAX_FIELDS = ("cgst_amount", "sgst_amount", "igst_amount")
 
 # ---------------------------------------------------------------------------
 # Extraction prompt
@@ -299,10 +303,30 @@ async def _call_gemini_api(image_bytes: bytes, mime_type: str = "image/jpeg") ->
 # ---------------------------------------------------------------------------
 
 
+def _has_tax(data: dict[str, Any]) -> bool:
+    """True if the invoice charges any GST, so tax fields are expected."""
+    for field in (*_TAX_FIELDS, "tax_amount"):
+        try:
+            if float(data.get(field) or 0) != 0:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
 def _calculate_confidence(data: dict[str, Any]) -> float:
-    """Return a 0.0–1.0 score based on how many key fields were extracted."""
-    filled = sum(1 for f in _CONFIDENCE_FIELDS if data.get(f) is not None)
-    base = filled / len(_CONFIDENCE_FIELDS)
+    """Return a 0.0–1.0 score based on how much of the expected data was found.
+
+    "Expected" is the point: tax fields count only on invoices that charge tax,
+    so a correctly-read zero-rated invoice is not marked down for the absence of
+    figures it was never going to have.
+    """
+    expected = list(_CONFIDENCE_FIELDS)
+    if _has_tax(data):
+        expected += list(_TAX_FIELDS)
+
+    filled = sum(1 for f in expected if data.get(f) is not None)
+    base = filled / len(expected)
 
     # Bonus: any line items successfully extracted
     if data.get("line_items"):
@@ -481,16 +505,22 @@ async def extract_vendor_invoice(
             return False
         return True
 
+    # 503 "model is experiencing high demand" is the common failure on a
+    # full-size PDF: the same key answers small prompts fine, so it is capacity
+    # pressure rather than an outage, and it clears on its own. Two attempts five
+    # seconds apart was not enough to ride that out — observed failing repeatedly
+    # on live uploads — so back off further and for longer.
     try:
         async for attempt in AsyncRetrying(
-            stop=stop_after_attempt(2),
-            wait=wait_exponential(multiplier=2, min=5, max=30),
+            stop=stop_after_attempt(4),
+            wait=wait_exponential(multiplier=4, min=5, max=45),
             retry=retry_if_exception(_is_retryable),
             reraise=True,
         ):
             with attempt:
                 log.info(
                     "calling Gemini OCR",
+                    model=settings.GEMINI_MODEL,
                     attempt=attempt.retry_state.attempt_number,
                     mime_type=mime_type,
                     size_bytes=len(image_bytes),

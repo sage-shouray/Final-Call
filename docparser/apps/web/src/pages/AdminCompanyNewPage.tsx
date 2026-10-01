@@ -15,6 +15,11 @@ export default function AdminCompanyNewPage() {
     name: '', slug: '', gstin: '', email: '', phone: '', address: '', status: 'trial',
   });
   const [error, setError] = useState('');
+  // The slug mirrors the company name until someone edits it directly. Tracking
+  // that explicitly, rather than checking whether the slug is empty, is what
+  // makes it keep up: after one keystroke the slug is non-empty, so an
+  // "is it blank?" test stops updating and freezes on the first letter.
+  const [slugEdited, setSlugEdited] = useState(false);
 
   const set = (k: keyof CompanyForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(p => ({ ...p, [k]: e.target.value }));
@@ -26,6 +31,9 @@ export default function AdminCompanyNewPage() {
   });
 
   const autoSlug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  // While typing a slug by hand, keep a trailing hyphen: stripping it mid-word
+  // makes "acme-" impossible to type.
+  const typedSlug = (value: string) => value.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+/, '');
 
   const fields: { label: string; key: keyof CompanyForm; type?: string; required?: boolean }[] = [
     { label: 'Company Name', key: 'name', required: true },
@@ -55,9 +63,18 @@ export default function AdminCompanyNewPage() {
               type={f.type ?? 'text'}
               value={form[f.key]}
               onChange={e => {
-                set(f.key)(e);
-                if (f.key === 'name' && !form.slug) {
-                  setForm(p => ({ ...p, slug: autoSlug(e.target.value) }));
+                const value = e.target.value;
+                if (f.key === 'name') {
+                  // One update covering both fields, so the slug never reads a
+                  // stale copy of itself.
+                  setForm(p => ({ ...p, name: value, ...(slugEdited ? {} : { slug: autoSlug(value) }) }));
+                } else if (f.key === 'slug') {
+                  const cleaned = typedSlug(value);
+                  // Clearing the field hands control back to the name.
+                  setSlugEdited(cleaned.length > 0);
+                  setForm(p => ({ ...p, slug: cleaned }));
+                } else {
+                  set(f.key)(e);
                 }
               }}
               className="w-full rounded-lg border border-neutral-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
@@ -87,7 +104,9 @@ export default function AdminCompanyNewPage() {
 
         <div className="flex gap-3 pt-2">
           <button
-            onClick={() => create.mutate(form)}
+            // Tidy the slug on submit — a trailing hyphen is allowed while typing
+            // but must not reach the database.
+            onClick={() => create.mutate({ ...form, slug: autoSlug(form.slug) })}
             disabled={!form.name || !form.slug || create.isPending}
             className="flex items-center gap-2 rounded-lg bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50 transition-colors"
           >

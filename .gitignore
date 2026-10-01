@@ -1,0 +1,13 @@
+# Repo-root ignores. The per-app .gitignore files do not reach up here, so
+# anything created at this level needs listing explicitly.
+
+# Analysis credentials — a live SonarQube token must never be committed.
+.sonartoken
+.token
+.last_doc.json
+
+# Scanner working directory
+.scannerwork/
+
+# k6 summary exports
+docparser/loadtest/*.json

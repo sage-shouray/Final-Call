@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import {
@@ -14,6 +14,8 @@ import { Badge }         from '@/components/ui/Badge';
 import { Skeleton }      from '@/components/ui/Skeleton';
 import { Topbar }        from '@/components/layout/Topbar';
 import { ServicePOSection } from '@/components/upload/ValidationPanel';
+import { PipelineRail } from '@/components/upload/PipelineRail';
+import { PostingFailureModal, extractSapMessage } from '@/components/ui/PostingFailureModal';
 import { formatDateTime, formatDate } from '@/lib/dates';
 import { toINR }          from '@/lib/currency';
 import { cn }             from '@/lib/cn';
@@ -486,10 +488,51 @@ export default function DocumentDetailPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['document', id] }),
   });
 
+  // One action that runs whatever route SAP chose — goods receipt first when the
+  // route calls for it, then the invoice. Replaces the user picking MIGO vs MIRO.
+  const processMutation = useMutation({
+    mutationFn: () => api.post(`/documents/${id}/process`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['document', id] }),
+  });
+
   const { event } = useDocumentWebSocket(id);
   useEffect(() => {
     if (event) qc.invalidateQueries({ queryKey: ['document', id] });
   }, [event, id, qc]);
+
+  // The failure dialog for whichever posting failed. Previously a failed
+  // MIRO/GRN/FB60 only showed as a red card someone had to scroll down and
+  // notice — this surfaces it the moment the document is opened (or the
+  // moment it fails, if already on the page) and stays up until dismissed.
+  const [postingFailure, setPostingFailure] = useState<{ title: string; reason: string } | null>(null);
+  // Keyed by document id + posted_at, so re-fetches of the same failure
+  // don't reopen a dialog the person just closed with Okay.
+  const shownFailureRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!doc) return;
+    const candidates: { title: string; sapResponse: unknown; fallback: string; postedAt: string | undefined }[] = [
+      { title: 'MIRO Posting Failed',  sapResponse: (doc.miro_posting as { sap_response?: unknown } | null)?.sap_response,
+        fallback: 'SAP rejected the MIRO posting.', postedAt: (doc.miro_posting as { posted_at?: string } | null)?.posted_at },
+      { title: 'Goods Receipt Failed', sapResponse: (doc.grn_posting as { sap_response?: unknown } | null)?.sap_response,
+        fallback: 'SAP rejected the goods receipt posting.', postedAt: (doc.grn_posting as { posted_at?: string } | null)?.posted_at },
+      { title: 'FB60 Posting Failed',  sapResponse: null,
+        fallback: (doc.fb60_posting as { message?: string } | null)?.message || 'SAP rejected the FB60 posting.',
+        postedAt: (doc.fb60_posting as { posted_at?: string } | null)?.posted_at },
+    ];
+    const statuses: Record<string, string | undefined> = {
+      'MIRO Posting Failed':  (doc.miro_posting as { status?: string } | null)?.status,
+      'Goods Receipt Failed': (doc.grn_posting as { status?: string } | null)?.status,
+      'FB60 Posting Failed':  (doc.fb60_posting as { status?: string } | null)?.status,
+    };
+    const failed = candidates.find((c) => statuses[c.title] && statuses[c.title] !== 'success');
+    if (!failed) return;
+
+    const key = `${doc.document_id}:${failed.title}:${failed.postedAt ?? ''}`;
+    if (shownFailureRef.current === key) return;
+    shownFailureRef.current = key;
+    setPostingFailure({ title: failed.title, reason: extractSapMessage(failed.sapResponse, failed.fallback) });
+  }, [doc]);
 
   // ── Loading ────────────────────────────────────────────────────────────────
 
@@ -546,6 +589,14 @@ export default function DocumentDetailPage() {
   const isMigo      = doc.tcode === 'MIGO' || doc.type === 'goods_receipt';
   const isNonPO     = doc.tcode === 'FB60' || doc.invoice_subtype === 'non_po' || !!doc.fb60_posting;
   const isServicePO = doc.invoice_subtype === 'service_po' || doc.invoice_subtype === 'freight_po';
+  // When SAP has chosen a route we drive posting from it, so the separate
+  // MIGO / MIRO buttons are replaced by a single action.
+  const route        = doc.pipeline?.routing?.route;
+  const routeIsPostable = route === 'miro_direct' || route === 'migo_then_miro';
+  const canProcess   = routeIsPostable
+    && doc.miro_posting?.status !== 'success'
+    && status !== DocumentStatus.POSTING
+    && status !== DocumentStatus.GR_POSTING;
 
   return (
     <>
@@ -583,7 +634,20 @@ export default function DocumentDetailPage() {
                 : 'Validate with SAP'}
           </button>
         )}
-        {isMigo && !isServicePO && (status === DocumentStatus.EXTRACTED || status === DocumentStatus.VALIDATED) && (
+        {canProcess && (
+          <button
+            type="button"
+            onClick={() => processMutation.mutate()}
+            disabled={processMutation.isPending}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-60 transition-colors"
+          >
+            {processMutation.isPending
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <CheckCircle2 className="h-3.5 w-3.5" />}
+            {route === 'migo_then_miro' ? 'Post GR + Invoice' : 'Post Invoice'}
+          </button>
+        )}
+        {!routeIsPostable && isMigo && !isServicePO && (status === DocumentStatus.EXTRACTED || status === DocumentStatus.VALIDATED) && (
           <button
             type="button"
             onClick={() => grnMutation.mutate()}
@@ -596,7 +660,7 @@ export default function DocumentDetailPage() {
             Post to MIGO
           </button>
         )}
-        {!isMigo && status === DocumentStatus.VALIDATED && (
+        {!routeIsPostable && !isMigo && status === DocumentStatus.VALIDATED && (
           <button
             type="button"
             onClick={() => miroMutation.mutate()}
@@ -1045,8 +1109,18 @@ export default function DocumentDetailPage() {
             )}
           </div>
 
-          {/* Right: timeline */}
+          {/* Right: pipeline rail, then timeline */}
           <div className="space-y-4">
+            {/* How this document was routed, and how fast. Shown above the
+                status timeline because it answers the question the timeline
+                cannot: why is it going where it is going. */}
+            <PipelineRail
+              pipeline={doc.pipeline}
+              extracted={Boolean(doc.extracted)}
+              failed={status === DocumentStatus.FAILED}
+              documentId={doc.document_id}
+            />
+
             <div className="rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900">
               <div className="mb-4 flex items-center gap-2">
                 <FileText className="h-4 w-4 text-neutral-400 dark:text-neutral-500" />
@@ -1072,6 +1146,14 @@ export default function DocumentDetailPage() {
         docId={id ?? ''}
         open={auditOpen}
         onClose={() => setAuditOpen(false)}
+      />
+
+      <PostingFailureModal
+        open={!!postingFailure}
+        onClose={() => setPostingFailure(null)}
+        title={postingFailure?.title ?? 'Posting Failed'}
+        reason={postingFailure?.reason ?? ''}
+        documentId={doc.document_id}
       />
     </>
   );

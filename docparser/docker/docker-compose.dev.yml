@@ -1,5 +1,3 @@
-version: "3.9"
-
 # Development override — mounts source code for hot-reload
 # Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 
@@ -35,22 +33,18 @@ services:
       NODE_ENV: development
 
   # Mongo Express — DB admin UI in dev only
-  mongo-express:
-    image: mongo-express:1.0
+  adminer:
+    image: adminer:4
     restart: unless-stopped
-    ports:
-      - "8081:8081"
     environment:
-      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_ROOT_USER:-admin}
-      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_ROOT_PASSWORD:-changeme}
-      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-changeme}@mongodb:27017/
-      ME_CONFIG_BASICAUTH: "false"
-    depends_on:
-      - mongodb
+      ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      - "8081:8080"
     networks:
       - docparser_net
+    depends_on:
+      - postgres
 
-  # Redis Commander — cache inspector in dev only
   redis-commander:
     image: rediscommander/redis-commander:latest
     restart: unless-stopped

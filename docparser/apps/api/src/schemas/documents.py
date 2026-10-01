@@ -143,6 +143,7 @@ class DocumentResponse(BaseModel):
     uploaded_at: str
     file: dict[str, Any]
     extracted: dict[str, Any] | None = None
+    pipeline: dict[str, Any] | None = None
     sap_validation: dict[str, Any] | None = None
     grn_posting: dict[str, Any] | None = None
     miro_posting: dict[str, Any] | None = None

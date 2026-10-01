@@ -15,9 +15,15 @@ async def connect_redis() -> None:
         str(settings.REDIS_URL),
         decode_responses=True,
         max_connections=20,
-        socket_connect_timeout=5,
-        socket_timeout=5,
-        retry_on_timeout=True,
+        # Deliberately short. Redis here is a local, optional dependency: every
+        # caller already degrades gracefully without it (rate limiting passes
+        # through, token blacklisting is skipped). A 5 s connect timeout meant
+        # each call waited 5 s on ::1 and again on 127.0.0.1, then retried — so
+        # with Redis down a login took 23 seconds instead of failing over
+        # instantly. A local Redis answers in microseconds or not at all.
+        socket_connect_timeout=1,
+        socket_timeout=2,
+        retry_on_timeout=False,
     )
     await _redis.ping()
     log.info("Redis connected", url=str(settings.REDIS_URL).split("@")[-1])
