@@ -1,0 +1,20 @@
+# Real customer invoice PDFs land here during local testing and via the
+# storage service's local-disk mode. Without this file, `COPY src/ ./src/` in
+# the Dockerfile bakes whatever is in this folder permanently into the image's
+# layer history — not just onto the running container's disk, but into the
+# image itself, recoverable from any copy of it (a registry, a `docker save`
+# archive, another machine's layer cache) even after the files are deleted.
+#
+# In production this path is bind-mounted over by docker-compose.yml anyway
+# (see the api service's volumes entry), so nothing here is ever needed by the
+# built image regardless of environment.
+src/uploads/
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
+
+.env
+.env.*

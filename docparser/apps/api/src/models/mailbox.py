@@ -51,6 +51,19 @@ class MailboxRow(Base):
     # unattended. Empty means nothing is pre-trusted.
     sender_allowlist: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
 
+    # One physical inbox can serve more than one company — e.g. a gate-security
+    # scanner with no mailbox of its own sending to the same address another
+    # tenant already uses. Each entry is {"sender": "<address or @domain>",
+    # "tenant_id": "<id>"}; the first match on the message's sender wins and
+    # overrides this row's own `tenant_id` for that one message. This is the
+    # one deliberate exception to "tenant comes from the mailbox, never the
+    # message" above — unavoidable once two tenants share one inbox, since
+    # there is no second mailbox left to tell them apart by. The sender header
+    # is still attacker-writable, so this is weaker than true mailbox
+    # isolation; a wrongly-routed invoice is still caught by the normal
+    # SAP-match gates before anything posts, same as any other document.
+    tenant_routes: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
     # Auto-posting is decided per mailbox as well as globally: a customer may be
     # happy to automate uploads by their own staff while wanting every emailed
     # invoice reviewed. Both must be true for an emailed document to post itself.
@@ -85,6 +98,7 @@ class MailboxRow(Base):
             "poll_interval_s":    self.poll_interval_s,
             "enabled":            self.enabled,
             "sender_allowlist":   self.sender_allowlist or [],
+            "tenant_routes":      self.tenant_routes or [],
             "auto_post_enabled":  self.auto_post_enabled,
             "configured":         bool(self.credentials_enc),
             "last_polled_at":     self.last_polled_at,

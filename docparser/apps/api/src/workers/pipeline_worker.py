@@ -27,6 +27,33 @@ from src.config import settings
 log = structlog.get_logger(__name__)
 
 
+async def _is_quality_hold_tenant(tenant_id: str | None) -> bool:
+    """True for a tenant whose goods receipt goes into blocked stock first.
+
+    Placeholder for a real `workflow_profile` column on the tenant record —
+    there is only one such tenant today (Sangam), so this is a direct check
+    rather than a lookup through a profile registry that doesn't exist yet.
+
+    Tenant ids are opaque (`tenant-<random hex>`, assigned at company creation —
+    see admin.py's create_company), so this looks up the tenant's own name/slug
+    rather than guessing from the id itself.
+    """
+    if not tenant_id:
+        return False
+    from sqlalchemy import select
+
+    from src.database import AsyncSessionLocal
+    from src.models.tenant import TenantRow
+
+    async with AsyncSessionLocal() as session:
+        tenant = (await session.execute(
+            select(TenantRow).where(TenantRow.id == tenant_id)
+        )).scalar_one_or_none()
+    if not tenant:
+        return False
+    return "sangam" in (tenant.slug or "").lower() or "sangam" in (tenant.name or "").lower()
+
+
 async def _persist(document_id: str, patch: dict[str, Any]) -> None:
     """Merge a patch into the document's `pipeline` column."""
     from src.database import AsyncSessionLocal
@@ -56,6 +83,25 @@ async def _fast_track(document_id: str, file_bytes: bytes, tenant_id: str | None
         tenant_id=tenant_id,
     )
     await _persist(document_id, {"routing": routing})
+
+    # Sangam's quality-hold workflow: auto-post the goods receipt into blocked
+    # stock (movement 103) the moment a PO resolves — no manager click, since a
+    # person only re-enters this flow later, at quality release. This is a
+    # stand-in for a real per-tenant workflow-profile lookup, which doesn't
+    # exist yet; today Sangam is the only tenant with an automated GR step, so
+    # it is checked directly rather than through a registry. Never allowed to
+    # affect the rest of the pipeline — OCR and routing continue regardless.
+    if routing.get("resolved") and routing.get("po_number") and await _is_quality_hold_tenant(tenant_id):
+        import asyncio as _asyncio
+        from src.workers.migo_worker import run_migo_103_direct
+
+        async def _auto_grn_103() -> None:
+            try:
+                await run_migo_103_direct(document_id)
+            except Exception as exc:
+                log.error("auto GRN-103 failed", document_id=document_id, error=str(exc))
+
+        _asyncio.create_task(_auto_grn_103(), name=f"grn103-{document_id}")
 
     # Apply the subtype the moment routing resolves — roughly a second in, rather
     # than waiting ~17 s for OCR. This is what lets the UI show the route while

@@ -12,7 +12,10 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      # 127.0.0.1 only — nothing outside this server needs to reach
+      # Postgres directly; the api/worker containers reach it over the
+      # internal docparser_net network regardless of this binding.
+      - "127.0.0.1:5432:5432"
     networks:
       - docparser_net
     healthcheck:
@@ -32,7 +35,8 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "6379:6379"
+      # Same reasoning as postgres above.
+      - "127.0.0.1:6379:6379"
     networks:
       - docparser_net
     healthcheck:
@@ -59,7 +63,20 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      # 127.0.0.1 only — the internal nginx reaches this container over
+      # docparser_net by service name, not through this published port.
+      # Kept bound to loopback (rather than removed) so `curl 127.0.0.1:8000`
+      # still works for debugging directly on the server.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # Bind-mounted, not a Docker-managed volume: uploaded invoice PDFs are
+      # customer data, and a plain host folder is something that can be found,
+      # backed up, and inspected directly, rather than needing `docker volume`
+      # commands. Without this, storage_service.py's local-disk fallback wrote
+      # into the container's own filesystem, and a container replacement (a
+      # redeploy, an image update, `docker compose up --force-recreate`) lost
+      # every stored invoice with no warning.
+      - ../../data/uploads:/app/uploads
     networks:
       - docparser_net
     healthcheck:
@@ -69,32 +86,25 @@ services:
       retries: 3
       start_period: 30s
 
-  # ---------------------------------------------------------------------------
-  # Celery worker
-  # ---------------------------------------------------------------------------
-  worker:
-    build:
-      context: ../apps/api
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    command: celery -A src.workers.celery_app worker --loglevel=info --concurrency=4
-    env_file:
-      - ../.env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - docparser_net
+  # There is deliberately no Celery worker service here. Nothing in this
+  # application enqueues a task through Celery — every background job (the
+  # pipeline, mail polling, the event consumer) runs as an asyncio task inside
+  # the api container's own process, started from src/main.py's lifespan.
+  # celery_app.py exists in the source tree but is never invoked. A worker
+  # service was defined here once; it crash-looped every ~30s trying to reach
+  # Redis at "localhost" (config.py's untouched CELERY_BROKER_URL default,
+  # meaningless inside a container) for a queue nothing was ever feeding.
 
   # ---------------------------------------------------------------------------
   # React / Vite (production build served by nginx)
   # ---------------------------------------------------------------------------
   web:
     build:
-      context: ../apps/web
-      dockerfile: Dockerfile
+      # The whole workspace root, not ../apps/web alone — apps/web/Dockerfile
+      # needs the shared package-lock.json one level above it. See that
+      # Dockerfile's own comment for why.
+      context: ..
+      dockerfile: apps/web/Dockerfile
     restart: unless-stopped
     depends_on:
       - api
@@ -107,9 +117,13 @@ services:
   nginx:
     image: nginx:1.25-alpine
     restart: unless-stopped
+    # Bound to 127.0.0.1, not 0.0.0.0 — never reachable from the internet
+    # directly. The host's own nginx (installed via apt, outside Docker) is
+    # the single public door on 80/443 for every product on this server; it
+    # reverse-proxies ap.uvira.ai to this port. TLS terminates at that outer
+    # layer too, which is why this inner nginx only serves plain HTTP.
     ports:
-      - "80:80"
-      - "443:443"
+      - "127.0.0.1:8001:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:

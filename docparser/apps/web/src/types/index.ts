@@ -445,6 +445,19 @@ export interface DocumentPipeline {
   autopost?:          PipelineAutopost;
 }
 
+export interface SegmentationInfo {
+  group_id:               string;
+  part:                   number;
+  of:                     number;
+  source_filename:        string;
+  pages:                  [number, number];
+  invoice_no:             string;
+  po_number:              string;
+  confidence:             'high' | 'low';
+  reason:                 string;
+  forced_manual_review:   boolean;
+}
+
 export interface Document {
   id:               string;
   document_id:      string;
@@ -455,6 +468,7 @@ export interface Document {
   uploaded_by:    string;
   uploaded_at:    string;
   file:           FileMetadata;
+  source_metadata?: { segmentation?: SegmentationInfo } | null;
   extracted:      ExtractedData | null;
   sap_validation: SAPValidation | null;
   grn_posting:    GRNPosting | null;

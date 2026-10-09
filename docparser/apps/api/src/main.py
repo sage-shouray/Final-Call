@@ -90,103 +90,224 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         log.warning("Super-admin seed failed (non-fatal)", error=str(exc))
 
-    # Idempotent schema migrations — add any new columns without alembic
-    try:
-        async with engine.begin() as _conn:
-            await _conn.execute(text(
-                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS tenant_id VARCHAR"
-            ))
-            await _conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS ix_documents_tenant_id ON documents(tenant_id)"
-            ))
-            await _conn.execute(text(
-                "ALTER TABLE audit_logs ALTER COLUMN document_id DROP NOT NULL"
-            ))
-            await _conn.execute(text(
-                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS miro_parking JSONB"
-            ))
-            await _conn.execute(text(
-                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source VARCHAR NOT NULL DEFAULT 'web'"
-            ))
-            await _conn.execute(text(
-                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_reference VARCHAR NOT NULL DEFAULT ''"
-            ))
-            await _conn.execute(text(
-                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_metadata JSONB NOT NULL DEFAULT '{}'::jsonb"
-            ))
-            await _conn.execute(text('''
-                CREATE TABLE IF NOT EXISTS tenant_mailboxes (
-                    id VARCHAR PRIMARY KEY,
-                    tenant_id VARCHAR NOT NULL,
-                    provider VARCHAR NOT NULL DEFAULT 'imap',
-                    label VARCHAR NOT NULL DEFAULT '',
-                    address VARCHAR NOT NULL DEFAULT '',
-                    credentials_enc TEXT NOT NULL DEFAULT '',
-                    folder VARCHAR NOT NULL DEFAULT 'INBOX',
-                    poll_interval_s INTEGER NOT NULL DEFAULT 60,
-                    enabled BOOLEAN NOT NULL DEFAULT FALSE,
-                    sender_allowlist JSONB NOT NULL DEFAULT '[]'::jsonb,
-                    auto_post_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-                    last_polled_at TIMESTAMPTZ,
-                    last_success_at TIMESTAMPTZ,
-                    last_error TEXT NOT NULL DEFAULT '',
-                    consecutive_failures INTEGER NOT NULL DEFAULT 0,
-                    messages_seen INTEGER NOT NULL DEFAULT 0,
-                    documents_ingested INTEGER NOT NULL DEFAULT 0,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                )'''))
-            await _conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS ix_mailboxes_tenant ON tenant_mailboxes(tenant_id)"
-            ))
-            await _conn.execute(text('''
-                CREATE TABLE IF NOT EXISTS mailbox_seen_messages (
-                    id VARCHAR PRIMARY KEY,
-                    mailbox_id VARCHAR NOT NULL,
-                    message_id VARCHAR NOT NULL,
-                    subject TEXT NOT NULL DEFAULT '',
-                    sender VARCHAR NOT NULL DEFAULT '',
-                    received_at TIMESTAMPTZ,
-                    outcome VARCHAR NOT NULL DEFAULT '',
-                    document_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
-                    processed_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                )'''))
-            # The dedup lookup on every message: mailbox + message id.
-            await _conn.execute(text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS ux_seen_message "
-                "ON mailbox_seen_messages(mailbox_id, message_id)"
-            ))
+    # Idempotent schema migrations — add any new columns without alembic.
+    #
+    # Each statement runs in its OWN transaction, not one shared one. That
+    # used to mean a single missing table anywhere in this list — a genuine
+    # gap, since tenant_api_configs was never created by alembic's initial
+    # migration at all — rolled back every other statement in the batch too,
+    # including ones that had already succeeded. The users.tenant_id column
+    # was being added correctly on every boot and then silently discarded a
+    # few statements later for a completely unrelated reason. Isolating each
+    # statement means one gap blocks only the thing it actually affects.
+    _migrations: list[tuple[str, str]] = [
+        # Three more tables in the same missing-from-alembic category as
+        # tenant_api_configs below, found when creating a company failed
+        # outright — TenantRow is the very first insert that path makes.
+        ("tenants table", '''
+            CREATE TABLE IF NOT EXISTS tenants (
+                id VARCHAR PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                slug VARCHAR NOT NULL,
+                gstin VARCHAR NOT NULL DEFAULT '',
+                email VARCHAR NOT NULL DEFAULT '',
+                phone VARCHAR NOT NULL DEFAULT '',
+                address VARCHAR NOT NULL DEFAULT '',
+                status VARCHAR NOT NULL DEFAULT 'active',
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )'''),
+        ("tenants.slug unique index",
+         "CREATE UNIQUE INDEX IF NOT EXISTS ix_tenants_slug ON tenants(slug)"),
+        ("pricing_configs table", '''
+            CREATE TABLE IF NOT EXISTS pricing_configs (
+                id VARCHAR PRIMARY KEY,
+                tenant_id VARCHAR NOT NULL,
+                tcode VARCHAR NOT NULL,
+                label VARCHAR NOT NULL DEFAULT '',
+                price_per_document NUMERIC(10, 2) NOT NULL DEFAULT 0
+            )'''),
+        ("pricing_configs.tenant_id index",
+         "CREATE INDEX IF NOT EXISTS ix_pricing_configs_tenant ON pricing_configs(tenant_id)"),
+        ("billing_records table", '''
+            CREATE TABLE IF NOT EXISTS billing_records (
+                id VARCHAR PRIMARY KEY,
+                tenant_id VARCHAR NOT NULL,
+                period_month INTEGER NOT NULL,
+                period_year INTEGER NOT NULL,
+                tcode VARCHAR NOT NULL,
+                doc_count INTEGER NOT NULL DEFAULT 0,
+                price_each NUMERIC(10, 2) NOT NULL DEFAULT 0,
+                total_amount NUMERIC(10, 2) NOT NULL DEFAULT 0,
+                status VARCHAR NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )'''),
+        ("billing_records.tenant_id index",
+         "CREATE INDEX IF NOT EXISTS ix_billing_records_tenant ON billing_records(tenant_id)"),
+        ("documents.tenant_id",
+         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS tenant_id VARCHAR"),
+        ("documents.tenant_id index",
+         "CREATE INDEX IF NOT EXISTS ix_documents_tenant_id ON documents(tenant_id)"),
+        # The User model declares this column (models/user.py), but neither
+        # this block nor alembic's initial migration ever added it to the
+        # real users table. Every query that selects a user, including the
+        # login path and super-admin seeding, names this column explicitly
+        # and fails outright without it.
+        ("users.tenant_id",
+         "ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id VARCHAR"),
+        ("users.tenant_id index",
+         "CREATE INDEX IF NOT EXISTS ix_users_tenant_id ON users(tenant_id)"),
+        ("audit_logs.document_id nullable",
+         "ALTER TABLE audit_logs ALTER COLUMN document_id DROP NOT NULL"),
+        ("documents.miro_parking",
+         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS miro_parking JSONB"),
+        ("documents.source",
+         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source VARCHAR NOT NULL DEFAULT 'web'"),
+        ("documents.source_reference",
+         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_reference VARCHAR NOT NULL DEFAULT ''"),
+        ("documents.source_metadata",
+         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_metadata JSONB NOT NULL DEFAULT '{}'::jsonb"),
+        ("tenant_mailboxes table", '''
+            CREATE TABLE IF NOT EXISTS tenant_mailboxes (
+                id VARCHAR PRIMARY KEY,
+                tenant_id VARCHAR NOT NULL,
+                provider VARCHAR NOT NULL DEFAULT 'imap',
+                label VARCHAR NOT NULL DEFAULT '',
+                address VARCHAR NOT NULL DEFAULT '',
+                credentials_enc TEXT NOT NULL DEFAULT '',
+                folder VARCHAR NOT NULL DEFAULT 'INBOX',
+                poll_interval_s INTEGER NOT NULL DEFAULT 60,
+                enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                sender_allowlist JSONB NOT NULL DEFAULT '[]'::jsonb,
+                auto_post_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                last_polled_at TIMESTAMPTZ,
+                last_success_at TIMESTAMPTZ,
+                last_error TEXT NOT NULL DEFAULT '',
+                consecutive_failures INTEGER NOT NULL DEFAULT 0,
+                messages_seen INTEGER NOT NULL DEFAULT 0,
+                documents_ingested INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )'''),
+        ("tenant_mailboxes.tenant_id index",
+         "CREATE INDEX IF NOT EXISTS ix_mailboxes_tenant ON tenant_mailboxes(tenant_id)"),
+        ("tenant_mailboxes.tenant_routes",
+         "ALTER TABLE tenant_mailboxes ADD COLUMN IF NOT EXISTS tenant_routes JSONB NOT NULL DEFAULT '[]'::jsonb"),
+        ("sap_notifications table", '''
+            CREATE TABLE IF NOT EXISTS sap_notifications (
+                id VARCHAR PRIMARY KEY,
+                po_number VARCHAR NOT NULL DEFAULT '',
+                status VARCHAR NOT NULL DEFAULT '',
+                message TEXT NOT NULL DEFAULT '',
+                raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                processed BOOLEAN NOT NULL DEFAULT FALSE,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                document_id VARCHAR NOT NULL DEFAULT '',
+                result TEXT NOT NULL DEFAULT '',
+                processed_at TIMESTAMPTZ,
+                received_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )'''),
+        ("sap_notifications.po_number index",
+         "CREATE INDEX IF NOT EXISTS ix_sap_notif_po ON sap_notifications(po_number)"),
+        ("sap_notifications.processed index",
+         "CREATE INDEX IF NOT EXISTS ix_sap_notif_processed ON sap_notifications(processed)"),
+        ("mailbox_seen_messages table", '''
+            CREATE TABLE IF NOT EXISTS mailbox_seen_messages (
+                id VARCHAR PRIMARY KEY,
+                mailbox_id VARCHAR NOT NULL,
+                message_id VARCHAR NOT NULL,
+                subject TEXT NOT NULL DEFAULT '',
+                sender VARCHAR NOT NULL DEFAULT '',
+                received_at TIMESTAMPTZ,
+                outcome VARCHAR NOT NULL DEFAULT '',
+                document_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+                processed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )'''),
+        # The dedup lookup on every message: mailbox + message id.
+        ("mailbox_seen_messages dedup index",
+         "CREATE UNIQUE INDEX IF NOT EXISTS ux_seen_message "
+         "ON mailbox_seen_messages(mailbox_id, message_id)"),
+        # Deduplication reads file->>'fingerprint' on every ingest.
+        ("documents fingerprint index",
+         "CREATE INDEX IF NOT EXISTS ix_documents_fingerprint "
+         "ON documents ((file->>'fingerprint'))"),
+        # tenant_api_configs itself, not just columns on it: alembic's initial
+        # migration never created this table at all — every ALTER below on it
+        # was silently assuming a table that only ever existed on whichever
+        # database first ran this code, never captured in a real migration.
+        ("tenant_api_configs table", '''
+            CREATE TABLE IF NOT EXISTS tenant_api_configs (
+                id VARCHAR PRIMARY KEY,
+                tenant_id VARCHAR NOT NULL,
+                api_key VARCHAR NOT NULL,
+                label VARCHAR NOT NULL DEFAULT '',
+                workflow VARCHAR NOT NULL DEFAULT '',
+                full_url VARCHAR NOT NULL DEFAULT '',
+                base_url VARCHAR NOT NULL DEFAULT '',
+                path VARCHAR NOT NULL DEFAULT '',
+                method VARCHAR NOT NULL DEFAULT 'POST',
+                sap_client VARCHAR NOT NULL DEFAULT '800',
+                payload_template JSONB NOT NULL DEFAULT '{}'::jsonb,
+                auth_type VARCHAR NOT NULL DEFAULT 'basic',
+                username VARCHAR NOT NULL DEFAULT '',
+                password VARCHAR NOT NULL DEFAULT '',
+                extra_headers JSONB NOT NULL DEFAULT '{}'::jsonb,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                last_tested_at TIMESTAMPTZ,
+                last_test_status VARCHAR
+            )'''),
+        # Per-tenant SAP endpoint: the full URL as that customer exposes it,
+        # plus their own request shape. Replaces the assumption of one shared
+        # host on client 800. Kept even though the CREATE TABLE above already
+        # includes both columns — cheap no-ops on a fresh table, and still the
+        # ones actually needed on any database where the table already existed
+        # from before this fix.
+        ("tenant_api_configs.full_url",
+         "ALTER TABLE tenant_api_configs ADD COLUMN IF NOT EXISTS full_url VARCHAR NOT NULL DEFAULT ''"),
+        ("tenant_api_configs.payload_template",
+         "ALTER TABLE tenant_api_configs ADD COLUMN IF NOT EXISTS payload_template JSONB NOT NULL DEFAULT '{}'::jsonb"),
+        ("documents.pipeline",
+         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS pipeline JSONB"),
+        # Found by cross-referencing every model column against every table
+        # actually created here and in alembic's initial migration — three
+        # more genuine gaps, same root cause as everything else in this list.
+        # page_count specifically is what broke the admin company list: it's
+        # summed for every tenant on every load, so a company that had been
+        # created successfully still failed to display at all.
+        ("documents.page_count",
+         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS page_count INTEGER NOT NULL DEFAULT 0"),
+        ("documents.f26_simulation",
+         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS f26_simulation JSONB"),
+        ("documents.f26_posting",
+         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS f26_posting JSONB"),
+    ]
 
-            # Deduplication reads file->>'fingerprint' on every ingest.
-            await _conn.execute(text(
-                "CREATE INDEX IF NOT EXISTS ix_documents_fingerprint "
-                "ON documents ((file->>'fingerprint'))"
-            ))
-            # Per-tenant SAP endpoint: the full URL as that customer exposes it,
-            # plus their own request shape. Replaces the assumption of one shared
-            # host on client 800.
-            await _conn.execute(text(
-                "ALTER TABLE tenant_api_configs ADD COLUMN IF NOT EXISTS full_url VARCHAR NOT NULL DEFAULT ''"
-            ))
-            await _conn.execute(text(
-                "ALTER TABLE tenant_api_configs ADD COLUMN IF NOT EXISTS payload_template JSONB NOT NULL DEFAULT '{}'::jsonb"
-            ))
-            await _conn.execute(text(
-                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS pipeline JSONB"
-            ))
+    _failed: list[str] = []
+    for _label, _sql in _migrations:
+        try:
+            async with engine.begin() as _conn:
+                await _conn.execute(text(_sql))
+        except Exception as exc:
+            _failed.append(_label)
+            log.warning("Schema migration step failed (non-fatal)", step=_label, error=str(exc))
+    if _failed:
+        log.warning("Schema migrations completed with failures", failed_steps=_failed)
+    else:
         log.info("Schema migrations applied")
-    except Exception as exc:
-        log.warning("Schema migration failed (non-fatal)", error=str(exc))
 
     # Start background workers in the FastAPI event loop
     from src.workers.change_stream_worker import start_change_stream_worker
     from src.workers.event_consumer import start_event_consumer
     from src.workers.mail_worker import start_mail_worker
+    from src.workers.sap_notification_worker import start_sap_notification_worker
 
     consumer_task = asyncio.create_task(start_event_consumer(), name="event-consumer")
     change_stream_task = asyncio.create_task(
         start_change_stream_worker(), name="change-stream"
     )
     mail_task = asyncio.create_task(start_mail_worker(), name="mail-ingest")
+    sap_notification_task = asyncio.create_task(
+        start_sap_notification_worker(), name="sap-notifications"
+    )
     log.info("Background workers started")
 
     yield
@@ -195,7 +316,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     consumer_task.cancel()
     change_stream_task.cancel()
     mail_task.cancel()
-    for task in (consumer_task, change_stream_task, mail_task):
+    sap_notification_task.cancel()
+    for task in (consumer_task, change_stream_task, mail_task, sap_notification_task):
         try:
             await task
         except asyncio.CancelledError:
@@ -269,7 +391,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1_000)
 # 6 — outermost: CORS sets response headers before anything else runs
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[str(o) for o in settings.CORS_ORIGINS],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -281,7 +403,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 from src.routers import auth, customers, dashboard, documents, health, websocket  # noqa: E402
-from src.routers import admin, mailboxes  # noqa: E402
+from src.routers import admin, mailboxes, sap_notifications  # noqa: E402
 
 app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
@@ -291,3 +413,4 @@ app.include_router(dashboard.router, prefix="/api")
 app.include_router(websocket.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(mailboxes.router, prefix="/api")
+app.include_router(sap_notifications.router, prefix="/api")

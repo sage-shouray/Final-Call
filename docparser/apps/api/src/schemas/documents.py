@@ -142,6 +142,7 @@ class DocumentResponse(BaseModel):
     uploaded_by: str
     uploaded_at: str
     file: dict[str, Any]
+    source_metadata: dict[str, Any] | None = None
     extracted: dict[str, Any] | None = None
     pipeline: dict[str, Any] | None = None
     sap_validation: dict[str, Any] | None = None

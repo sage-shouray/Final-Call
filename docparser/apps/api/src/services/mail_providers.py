@@ -54,6 +54,11 @@ class MailMessage:
     attachments: list[Attachment] = field(default_factory=list)
     provider_id: str = ""      # id used to mark the message read
     raw_headers: dict[str, Any] = field(default_factory=dict)
+    # Plain-text body (preview is enough) — a few operational messages, like a
+    # "stock released, ready to park" notification, carry no attachment at
+    # all; their content is the whole message, not something an attachment
+    # loop would ever see.
+    body: str = ""
 
 
 def _looks_like_pdf(filename: str, content_type: str, content: bytes) -> bool:
@@ -134,12 +139,14 @@ class GraphProvider(MailProviderBase):
         self._token_expires_at = time.time() + int(payload.get("expires_in", 3600))
         return self._token
 
-    async def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def _get(
+        self, path: str, params: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         token = await self._access_token()
+        headers = {"Authorization": f"Bearer {token}", **(extra_headers or {})}
         async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.get(f"{_GRAPH}{path}",
-                                    headers={"Authorization": f"Bearer {token}"},
-                                    params=params)
+            resp = await client.get(f"{_GRAPH}{path}", headers=headers, params=params)
         if resp.status_code == 403:
             raise MailAuthError(
                 "Graph returned 403. Grant Mail.Read as an *application* permission "
@@ -164,13 +171,27 @@ class GraphProvider(MailProviderBase):
         }
 
     async def fetch_unread(self, limit: int = 25) -> list[MailMessage]:
+        # Graph rejects this $filter (two AND'd conditions) combined with
+        # $orderby on the default query engine — "InefficientFilter", HTTP
+        # 400 — on every poll, not intermittently. Adding the documented
+        # ConsistencyLevel: eventual + $count=true workaround did not change
+        # the result: Graph still refuses this exact combination even on the
+        # advanced query engine. Dropping $orderby avoids the restriction
+        # entirely rather than continuing to negotiate with it — messages are
+        # sorted here, in Python, after fetching, for the same oldest-first
+        # order the request used to ask Graph for.
+        # No longer filtered to "hasAttachments eq true" — an operational
+        # notification (e.g. "stock released, ready to park") has no PDF at
+        # all, and that filter silently made it invisible to the poller
+        # before it was ever evaluated for anything. process_message decides
+        # per-message whether it needs an attachment; this just stops
+        # discarding the ones that don't have one before that choice is made.
         data = await self._get(
             f"/users/{self._mailbox}/mailFolders/{self._folder}/messages",
             params={
-                "$filter": "isRead eq false and hasAttachments eq true",
-                "$select": "id,subject,from,receivedDateTime,internetMessageId",
+                "$filter": "isRead eq false",
+                "$select": "id,subject,from,receivedDateTime,internetMessageId,bodyPreview",
                 "$top": str(limit),
-                "$orderby": "receivedDateTime asc",
             },
         )
         messages: list[MailMessage] = []
@@ -185,9 +206,11 @@ class GraphProvider(MailProviderBase):
                     datetime.fromisoformat(received.replace("Z", "+00:00")) if received else None
                 ),
                 provider_id=item.get("id", ""),
+                body=item.get("bodyPreview") or "",
             )
             msg.attachments = await self._attachments(msg.provider_id)
             messages.append(msg)
+        messages.sort(key=lambda m: m.received_at or datetime.min.replace(tzinfo=UTC))
         return messages
 
     async def _attachments(self, message_id: str) -> list[Attachment]:
@@ -297,16 +320,24 @@ class ImapProvider(MailProviderBase):
                 received = None
 
         attachments: list[Attachment] = []
+        body_text = ""
         for part in parsed.walk():
             if part.get_content_maintype() == "multipart":
                 continue
-            if part.get_content_disposition() not in ("attachment", "inline"):
-                continue
-            name = part.get_filename() or "attachment"
-            content = part.get_payload(decode=True) or b""
-            ctype = part.get_content_type()
-            if content and _looks_like_pdf(name, ctype, content):
-                attachments.append(Attachment(filename=name, content=content, content_type="application/pdf"))
+            disposition = part.get_content_disposition()
+            if disposition in ("attachment", "inline"):
+                name = part.get_filename() or "attachment"
+                content = part.get_payload(decode=True) or b""
+                ctype = part.get_content_type()
+                if content and _looks_like_pdf(name, ctype, content):
+                    attachments.append(Attachment(filename=name, content=content, content_type="application/pdf"))
+            elif not body_text and part.get_content_type() == "text/plain":
+                try:
+                    body_text = (part.get_payload(decode=True) or b"").decode(
+                        part.get_content_charset() or "utf-8", errors="replace"
+                    )
+                except Exception:
+                    body_text = ""
 
         return MailMessage(
             message_id=parsed.get("Message-ID", "") or f"imap-{provider_id}",
@@ -315,6 +346,7 @@ class ImapProvider(MailProviderBase):
             received_at=received,
             attachments=attachments,
             provider_id=provider_id,
+            body=body_text,
         )
 
     async def test_connection(self) -> dict[str, Any]:

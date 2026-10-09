@@ -1,6 +1,7 @@
 """Super Admin API — tenant/company management, billing, activity monitor."""
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -127,7 +128,9 @@ async def create_company(body: dict[str, Any], current_user: CurrentUser) -> dic
             ("po_detail",    "PO & GRN Detail",         "validation", "zpo_grn/Detail",                    "GET"),
             ("miro_post",    "MIRO (Material PO)",       "miro",       "ZMIRO/MIRO",                        "POST"),
             ("miro_service", "MIRO (Service PO)",        "miro",       "zmiro_post/MIRO",                   "POST"),
+            ("miro_park",    "MIRO Park (Draft)",        "miro",       "zmiro_park/PARK",                   "POST"),
             ("grn_post",     "GRN / MIGO Posting",      "grn",        "ZMIGO/GRN",                         "POST"),
+            ("grn_103",      "GRN 103 (Quality Hold)",  "grn",        "zmigo_103/GRN_103",                 "POST"),
             ("spo_detail",   "Service PO Detail",        "validation", "zspodetail/Detail",                 "GET"),
             ("customer",     "Customer Master",          "so",         "ZCUSTOMER/CUSTOMER",                "GET"),
             ("so_create",    "Sales Order Create",       "so",         "ZCREATE_SALESOR/SALESORDER_CREATE", "POST"),
@@ -380,9 +383,29 @@ async def test_company_api(tenant_id: str, api_key: str, current_user: CurrentUs
 
         import httpx
         auth = (api.username, api.password) if api.username else None
+        # po_detail and spo_detail are genuinely unusual: SAP expects a GET
+        # request carrying a JSON body — {"PO": ...} — not query parameters,
+        # and a request with no body at all returns HTTP 500 rather than a
+        # normal error. sap_service.py's fetch_po_details / fetch_service_po_
+        # details already send exactly this shape; a bare `client.get(url)`
+        # here does not, so this test previously reported both endpoints as
+        # failed even when the endpoint, URL and connectivity were all fine.
+        #
+        # The placeholder PO number has to be a real, plausible one — an
+        # all-zero value ("0000000000") gets treated by SAP as equivalent to
+        # no PO at all and still 500s. This is one confirmed real PO on this
+        # tenant's SAP (already fully received and posted); the lookup is
+        # read-only, so reusing it here has no side effects.
+        _get_with_body_keys = {"po_detail", "spo_detail"}
         try:
             async with httpx.AsyncClient(timeout=10.0, auth=auth) as client:
-                if api.method == "GET":
+                if api_key in _get_with_body_keys:
+                    resp = await client.request(
+                        "GET", url,
+                        content=json.dumps({"PO": "4500022773"}).encode(),
+                        headers={"Content-Type": "application/json", "Accept": "application/json"},
+                    )
+                elif api.method == "GET":
                     resp = await client.get(url, headers={"Accept": "application/json"})
                 else:
                     resp = await client.post(url, json={}, headers={"Content-Type": "application/json"})

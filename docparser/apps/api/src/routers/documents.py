@@ -156,7 +156,13 @@ async def upload_document(
     ))
 
     message = "Document uploaded successfully. Extraction started in the background."
-    if result.duplicate_of:
+    if result.split_document_ids:
+        all_ids = [result.document_id, *result.split_document_ids]
+        message = (
+            f"This PDF contained {len(all_ids)} invoices and was split into "
+            f"separate documents: {', '.join(all_ids)}."
+        )
+    elif result.duplicate_of:
         message = f"Uploaded. Note: an identical file was already processed as {result.duplicate_of}."
 
     return DocumentUploadResponse(
@@ -347,6 +353,49 @@ def _mail_item(doc: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# GET /api/documents/group/{group_id}
+#
+# A multi-invoice PDF, once split, produces several independent documents.
+# This answers "which documents came from the same upload" — the UI uses it
+# to show them as tabs instead of making the user find each one separately
+# in the main list.
+# ---------------------------------------------------------------------------
+
+@router.get("/group/{group_id}")
+async def get_document_group(group_id: str, current_user: CurrentUser) -> dict[str, Any]:
+    from sqlalchemy import select
+
+    from src.models.document import DocumentRow
+
+    stmt = select(DocumentRow).where(
+        DocumentRow.source_metadata["segmentation"]["group_id"].astext == group_id
+    )
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(stmt)).scalars().all()
+
+    docs = [serialize_doc(r.to_dict()) for r in rows]
+    docs = [d for d in docs if _tenant_ok(d, current_user)]
+
+    def _seg(d: dict[str, Any]) -> dict[str, Any]:
+        return (d.get("source_metadata") or {}).get("segmentation") or {}
+
+    docs.sort(key=lambda d: _seg(d).get("part") or 0)
+
+    items = [{
+        "document_id":     d["document_id"],
+        "part":            _seg(d).get("part"),
+        "of":              _seg(d).get("of"),
+        "invoice_no":      (d.get("extracted") or {}).get("invoice_no") or _seg(d).get("invoice_no") or "",
+        "vendor_name":     (d.get("extracted") or {}).get("vendor_name") or "",
+        "status":          d.get("status"),
+        "confidence":      _seg(d).get("confidence"),
+        "forced_manual_review": _seg(d).get("forced_manual_review", False),
+    } for d in docs]
+
+    return {"group_id": group_id, "documents": items}
+
+
+# ---------------------------------------------------------------------------
 # GET /api/documents/{document_id}
 # ---------------------------------------------------------------------------
 
@@ -370,6 +419,7 @@ async def get_document(document_id: str, current_user: CurrentUser) -> DocumentR
         uploaded_by=safe["uploaded_by"],
         uploaded_at=safe["uploaded_at"],
         file=safe["file"],
+        source_metadata=safe.get("source_metadata"),
         extracted=safe.get("extracted"),
         pipeline=safe.get("pipeline"),
         sap_validation=safe.get("sap_validation"),

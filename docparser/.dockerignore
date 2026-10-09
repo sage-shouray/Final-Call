@@ -1,0 +1,28 @@
+# apps/web's build context is now this whole workspace root (see
+# apps/web/Dockerfile and docker-compose.yml), so this file matters more than
+# it looks — without it, every build sends .env, credentials, and every
+# node_modules on disk into the build, even though the final image never
+# needs them.
+
+.env
+.env.*
+.token
+.sonartoken
+.git
+.git.zip
+*.zip
+
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.venv
+
+apps/api/src/uploads/
+
+docs/
+loadtest/
+*.md
+*.docx
+.vscode/
+.github/

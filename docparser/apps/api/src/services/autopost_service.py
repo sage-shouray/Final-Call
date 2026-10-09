@@ -56,6 +56,7 @@ BLOCKING_GATES = frozenset({
     "within_po_value",
     "tax_matches_po",
     "not_duplicate",
+    "segmentation_confidence",
 })
 
 
@@ -129,6 +130,27 @@ async def evaluate(doc: dict[str, Any]) -> dict[str, Any]:
     routing: dict[str, Any] = pipeline.get("routing") or {}
 
     gates: list[dict[str, Any]] = []
+
+    # ── 0. Split out of a multi-invoice PDF with a confident boundary ──────
+    # A document that came from segmentation_service splitting a merged PDF
+    # carries its boundary confidence in source_metadata. A low-confidence
+    # boundary means the page range for this document may be wrong — it could
+    # be missing a page of its own invoice or include one from the next —
+    # which posts the wrong amount to SAP. No reviewer confidence fixes a
+    # mis-drawn page boundary, so this blocks every posting path exactly like
+    # a SAP data mismatch, not just the unattended one.
+    seg = (doc.get("source_metadata") or {}).get("segmentation") or {}
+    if seg:
+        forced = bool(seg.get("forced_manual_review"))
+        gates.append(_gate(
+            "segmentation_confidence", not forced,
+            f"Split from a multi-invoice PDF ({seg.get('reason', '')})."
+            if forced else
+            "Split from a multi-invoice PDF with a confident boundary "
+            f"(invoice {seg.get('invoice_no') or '—'}, PO {seg.get('po_number') or '—'}).",
+        ))
+    else:
+        gates.append(_gate("segmentation_confidence", True, "Not split from a multi-invoice PDF."))
 
     # ── 1. Routing resolved and actionable ────────────────────────────────
     route = routing.get("route") or ""

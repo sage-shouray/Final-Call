@@ -136,6 +136,30 @@ class GRNPayload(BaseModel):
     po_items: list[GRNItemData]
 
 
+class GRN103ItemData(BaseModel):
+    """One line of a movement-type-103 goods receipt (into blocked/quality stock)."""
+    PO_NUMBER:  str
+    PO_ITEM:    str
+    MATERIAL:   str
+    PLANT:      str
+    STGE_LOC:   str
+    VENDOR:     str
+    ENTRY_QNT:  str   # quantity actually being received now
+    ENTRY_UOM:  str
+    PO_PR_QNT:  str   # quantity the PO ordered, for reference
+    ORDERPR_UN: str
+
+
+class GRN103Payload(BaseModel):
+    """Movement-type-103 GRN — goods received into blocked stock pending quality
+    inspection, posted via the dedicated zmigo_103/GRN_103 endpoint rather than
+    the standard ZMIGO/GRN used for a straight-to-unrestricted receipt."""
+    PSTNG_DATE: str
+    DOC_DATE:   str
+    REF_DOC_NO: str
+    items:      list[GRN103ItemData]
+
+
 class GRNResponse(BaseModel):
     grn_number: str = ""
     status: str = ""

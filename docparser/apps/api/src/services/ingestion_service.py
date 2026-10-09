@@ -42,6 +42,10 @@ class IngestResult:
     row_id: str
     duplicate_of: str | None = None
     started_pipeline: bool = False
+    # Set when the uploaded file was split into several invoices. `document_id`
+    # above is the first part; the rest are here so the caller can report all
+    # of them. Empty for an ordinary single-invoice upload.
+    split_document_ids: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -122,12 +126,116 @@ async def ingest_document(
     upload keeps its historical behaviour of allowing a re-upload; the mail
     poller sets the flag, because a mailbox will re-present the same attachment
     for reasons that have nothing to do with intent.
+
+    A multi-page PDF is checked for more than one invoice before anything is
+    created. When the check finds more than one, each one is split out and
+    ingested as its own document — see segmentation_service for how a boundary
+    is decided. A single-invoice PDF (the overwhelming majority of uploads)
+    pays only the cost of that check, same as before.
+    """
+    from src.services.storage_service import validate_upload
+
+    src = source or IngestSource()
+    validate_upload(file_bytes, filename, content_type)
+
+    if content_type == "application/pdf" or filename.lower().endswith(".pdf"):
+        from src.services.segmentation_service import detect_segments, split_pdf_bytes
+
+        seg_result = await detect_segments(file_bytes)
+        if seg_result.is_multi_invoice:
+            import hashlib as _hashlib
+
+            group_id = _hashlib.sha256(file_bytes).hexdigest()[:16]
+            total = len(seg_result.segments)
+            log.info(
+                "multi-invoice PDF detected — splitting",
+                filename=filename, segment_count=total, group_id=group_id,
+            )
+
+            child_results: list[IngestResult] = []
+            for idx, seg in enumerate(seg_result.segments, start=1):
+                part_bytes = split_pdf_bytes(file_bytes, seg.start_page, seg.end_page)
+                part_name = f"{filename} (part {idx} of {total})"
+                seg_meta = {
+                    "segmentation": {
+                        "group_id": group_id,
+                        "part": idx,
+                        "of": total,
+                        "source_filename": filename,
+                        "pages": [seg.start_page + 1, seg.end_page + 1],  # 1-indexed for humans
+                        "invoice_no": seg.invoice_no,
+                        "po_number": seg.po_number,
+                        "confidence": seg.confidence,
+                        "reason": seg.reason,
+                        # Low-confidence splits never auto-post, independent of
+                        # AUTO_POST_ENABLED — same risk class as the SAP-mismatch
+                        # blocking gates: a wrong boundary posts the wrong
+                        # invoice, which review must catch before SAP sees it.
+                        "forced_manual_review": seg.confidence != "high",
+                    },
+                }
+                merged_metadata = {**src.metadata, **seg_meta}
+                child = await _ingest_single_document(
+                    file_bytes=part_bytes,
+                    filename=part_name,
+                    content_type=content_type,
+                    document_type=document_type,
+                    invoice_subtype=invoice_subtype,
+                    tenant_id=tenant_id,
+                    source=IngestSource(
+                        channel=src.channel, actor=src.actor,
+                        reference=src.reference, metadata=merged_metadata,
+                    ),
+                    start_pipeline=start_pipeline,
+                    reject_duplicates=False,  # the whole batch was already deduped once below
+                )
+                child_results.append(child)
+
+            first, rest = child_results[0], child_results[1:]
+            return IngestResult(
+                document_id=first.document_id,
+                row_id=first.row_id,
+                duplicate_of=None,
+                started_pipeline=first.started_pipeline,
+                split_document_ids=[r.document_id for r in rest],
+            )
+
+    return await _ingest_single_document(
+        file_bytes=file_bytes,
+        filename=filename,
+        content_type=content_type,
+        document_type=document_type,
+        invoice_subtype=invoice_subtype,
+        tenant_id=tenant_id,
+        source=src,
+        start_pipeline=start_pipeline,
+        reject_duplicates=reject_duplicates,
+    )
+
+
+async def _ingest_single_document(
+    *,
+    file_bytes: bytes,
+    filename: str,
+    content_type: str,
+    document_type: DocumentType,
+    invoice_subtype: InvoiceSubtype | None,
+    tenant_id: str | None,
+    source: IngestSource,
+    start_pipeline: bool,
+    reject_duplicates: bool,
+) -> IngestResult:
+    """Create exactly one document row from exactly one invoice's bytes.
+
+    This is the body ingest_document always ran before segmentation existed —
+    unchanged, just named so a split invoice and a whole upload can both call
+    it instead of duplicating the create/store/start-pipeline logic.
     """
     from src.database import AsyncSessionLocal
     from src.repositories.document_repository import DocumentRepository
     from src.services.storage_service import build_s3_key, upload_file, validate_upload
 
-    src = source or IngestSource()
+    src = source
     validate_upload(file_bytes, filename, content_type)
 
     fingerprint = file_fingerprint(file_bytes)

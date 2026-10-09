@@ -13,6 +13,7 @@ statement about ownership is which authenticated mailbox it was found in.
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -22,6 +23,15 @@ import structlog
 from src.config import settings
 
 log = structlog.get_logger(__name__)
+
+# Sangam's quality-release notification arrives as a plain email on the same
+# shared mailbox, not an API call — e.g. 'The PO "4500022737" with invoice is
+# moved to unrestricted and ready for miro park'. No attachment, so it would
+# never reach process_message's PDF loop; it is matched on subject+body here
+# before that loop runs. Requires both the PO number AND "unrestricted" so an
+# unrelated email that happens to mention a PO number is never mistaken for one.
+_RELEASE_PO_PATTERN = re.compile(r'PO\s*"?(\d{6,12})"?', re.IGNORECASE)
+_RELEASE_KEYWORDS = ("unrestricted", "park")
 
 # After this many consecutive failures a mailbox is polled progressively less
 # often — capped so a recovered mailbox is still picked up within the hour.
@@ -98,6 +108,77 @@ async def _update_health(mailbox_id: str, **fields: Any) -> None:
         await session.commit()
 
 
+def _route_tenant(mailbox: dict[str, Any], sender: str) -> str:
+    """Which tenant a message belongs to — almost always just the mailbox's own.
+
+    `tenant_routes` only matters when one inbox is shared by more than one
+    company (see the field's docstring on MailboxRow): the first entry whose
+    sender/domain matches wins, otherwise this falls back to the mailbox's own
+    tenant exactly as it always has.
+    """
+    sender_clean = (sender or "").strip().lower()
+    for route in (mailbox.get("tenant_routes") or []):
+        rule = str(route.get("sender") or "").strip().lower()
+        if not rule:
+            continue
+        if rule.startswith("@") and sender_clean.endswith(rule):
+            return route["tenant_id"]
+        if sender_clean == rule:
+            return route["tenant_id"]
+    return mailbox["tenant_id"]
+
+
+def _extract_release_po(message: Any) -> str:
+    """The PO number if this message is a quality-release notification, else ''."""
+    text = f"{message.subject or ''} {getattr(message, 'body', '') or ''}"
+    low = text.lower()
+    if not all(kw in low for kw in _RELEASE_KEYWORDS):
+        return ""
+    match = _RELEASE_PO_PATTERN.search(text)
+    return match.group(1) if match else ""
+
+
+async def _handle_release_notification(mailbox: dict[str, Any], message: Any) -> bool:
+    """If this message is a Sangam-style release notification, auto-park the
+    matching document and report True so the caller skips normal PDF ingestion
+    for it (there is nothing to ingest — the message has no attachment)."""
+    po_number = _extract_release_po(message)
+    if not po_number:
+        return False
+
+    bound = log.bind(mailbox=mailbox["address"], po_number=po_number)
+
+    from sqlalchemy import select
+
+    from src.database import AsyncSessionLocal
+    from src.models.document import DocumentRow, DocumentStatus
+
+    async with AsyncSessionLocal() as session:
+        stmt = (
+            select(DocumentRow)
+            .where(
+                DocumentRow.extracted["po_number"].astext == po_number,
+                DocumentRow.status == DocumentStatus.GR_POSTED.value,
+                DocumentRow.grn_posting["pending_quality_release"].astext == "true",
+            )
+            .order_by(DocumentRow.uploaded_at.desc())
+            .limit(1)
+        )
+        doc = (await session.execute(stmt)).scalars().first()
+
+    if not doc:
+        bound.warning("release notification received but no matching document awaiting quality release")
+        return True  # still handled — this email is not an invoice, do not try to ingest it as one
+
+    bound.info("release notification matched — auto-parking MIRO", document_id=doc.document_id)
+    try:
+        from src.workers.sap_worker import run_miro_park_direct
+        await run_miro_park_direct(doc.document_id, posted_by="sap-notification")
+    except Exception as exc:
+        bound.error("auto-park from release notification failed", document_id=doc.document_id, error=str(exc))
+    return True
+
+
 async def process_message(mailbox: dict[str, Any], message: Any) -> list[str]:
     """Ingest a message's PDF attachments. Returns the document ids created."""
     from src.models.document import DocumentType
@@ -105,7 +186,8 @@ async def process_message(mailbox: dict[str, Any], message: Any) -> list[str]:
         DuplicateDocument, IngestSource, ingest_document,
     )
 
-    bound = log.bind(mailbox=mailbox["address"], sender=message.sender)
+    tenant_id = _route_tenant(mailbox, message.sender)
+    bound = log.bind(mailbox=mailbox["address"], sender=message.sender, tenant_id=tenant_id)
     trusted = _sender_allowed(message.sender, mailbox.get("sender_allowlist") or [])
     created: list[str] = []
 
@@ -121,7 +203,7 @@ async def process_message(mailbox: dict[str, Any], message: Any) -> list[str]:
                 filename=att.filename,
                 content_type=att.content_type,
                 document_type=DocumentType.VENDOR_INVOICE,
-                tenant_id=mailbox["tenant_id"],
+                tenant_id=tenant_id,
                 source=IngestSource(
                     channel="email",
                     actor=message.sender or "email",
@@ -196,6 +278,15 @@ async def poll_mailbox(mailbox: dict[str, Any]) -> dict[str, Any]:
             continue
 
         summary["messages"] += 1
+
+        if await _handle_release_notification(mailbox, message):
+            await _record_seen(mailbox["id"], message, "quality_release_notification", [])
+            try:
+                await provider.mark_read(message)
+            except Exception as exc:
+                bound.warning("could not mark message read", error=str(exc))
+            continue
+
         document_ids = await process_message(mailbox, message)
         summary["documents"] += len(document_ids)
 

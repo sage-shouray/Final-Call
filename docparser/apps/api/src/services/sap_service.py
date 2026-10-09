@@ -29,7 +29,7 @@ from tenacity import (
 from src.config import settings
 from src.exceptions import SAPCircuitOpenError, SAPConnectionError
 from src.schemas.sap import (
-    FB60Payload, FB60Response, GRNPayload, GRNResponse,
+    FB60Payload, FB60Response, GRN103Payload, GRNPayload, GRNResponse,
     MIRODetailResponse, MIROPayload, MIROResponse, SAPPOResponse,
     SAPServicePOResponse, SAPServicePOLineItem, SAPServicePOGRNEntry,
     ServiceMIROPayload,
@@ -368,9 +368,16 @@ class SAPService:
 
     async def _post_park_miro_raw(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Single MIRO Park POST — same payload contract as post_miro, no retry to
-        prevent duplicate parking in SAP."""
-        url = self._sap_url("zmiro_park/PARK")
-        return await self._http_post(url, payload)
+        prevent duplicate parking in SAP.
+
+        Was hardcoded to the global SAP server (`_sap_url`) rather than resolved
+        per tenant — the same gap `grn_103` had, and the reason this endpoint
+        never showed up as a configurable row in the admin panel. Fixed the same
+        way: resolved through this tenant's own `miro_park` API config, falling
+        back to the same default path when they haven't set one.
+        """
+        endpoint = await self._endpoint("miro_park", "zmiro_park/PARK")
+        return await self._http_post(endpoint.url, payload, endpoint=endpoint)
 
     async def _fetch_miro_details_raw(self, po_number: str) -> dict[str, Any]:
         """Retry-wrapped MIRO-status lookup — GET with po_number as a query param."""
@@ -572,6 +579,63 @@ class SAPService:
         raw_payload = payload.model_dump()
         raw_result = await self._post_grn_raw(raw_payload)
         # SAP may return a list of message dicts when quantities are exceeded (MIGO already done)
+        if isinstance(raw_result, list):
+            raw: dict[str, Any] = {"MESSAGE_LIST": raw_result, "raw_list": raw_result}
+        else:
+            raw = raw_result
+        return parse_grn_response(raw)
+
+    async def _post_grn_103_raw(self, payload: dict[str, Any]) -> Any:
+        """Single movement-type-103 GRN POST — same no-retry rule as the standard
+        GRN, for the same reason: a retried POST would create a second goods
+        receipt in SAP rather than reporting the first one's result.
+
+        Deliberately not routed through `_http_post`: SAP answers an "already
+        done" GRN with an error-status response carrying a parseable message
+        list (see `_post_grn_raw` above), and `_http_post` raises on any
+        non-2xx rather than returning that body — which would turn a perfectly
+        normal "already posted" outcome into a hard failure.
+
+        URL comes from this tenant's own `grn_103` API config when they've set
+        one (same mechanism every other SAP call uses), falling back to the
+        path SAP's team gave us directly when they haven't configured it yet.
+        """
+        import httpx
+        endpoint = await self._endpoint("grn_103", "zmigo_103/GRN_103")
+        cleaned = SAPService._clean_numbers(payload)
+        timeout_secs = settings.SAP_TIMEOUT_SECONDS
+        auth = getattr(endpoint, "auth", None) or (
+            (settings.SAP_USERNAME, settings.SAP_PASSWORD.get_secret_value())
+            if settings.SAP_USERNAME
+            else None
+        )
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        headers.update(getattr(endpoint, "extra_headers", {}) or {})
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=30.0, read=float(timeout_secs), write=30.0, pool=30.0),
+            auth=auth,
+        ) as client:
+            resp = await client.post(endpoint.url, json=cleaned, headers=headers)
+            log.info(
+                "SAP POST request", url=endpoint.url, status_code=resp.status_code,
+                body=resp.text[:500],
+            )
+            if resp.status_code >= 400:
+                try:
+                    return resp.json()
+                except Exception:
+                    raise SAPConnectionError(
+                        f"SAP returned HTTP {resp.status_code}: {resp.text[:200]}",
+                        status_code=502,
+                    )
+            return resp.json()
+
+    async def post_grn_103(self, payload: GRN103Payload) -> GRNResponse:
+        """Post a movement-type-103 GRN (into blocked/quality stock) to SAP."""
+        from src.services.grn_service import parse_grn_response
+        log.info("posting GRN-103 to SAP")
+        raw_payload = payload.model_dump()
+        raw_result = await self._post_grn_103_raw(raw_payload)
         if isinstance(raw_result, list):
             raw: dict[str, Any] = {"MESSAGE_LIST": raw_result, "raw_list": raw_result}
         else:

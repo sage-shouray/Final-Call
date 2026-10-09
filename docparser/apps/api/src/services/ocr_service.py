@@ -240,8 +240,15 @@ def _strip_json_fences(text: str) -> str:
     return text
 
 
-async def _call_gemini_api(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict[str, Any]:
-    """Make a single Gemini REST call; raise OCRError on any failure."""
+async def _call_gemini_api(
+    image_bytes: bytes, mime_type: str = "image/jpeg", prompt: str = _EXTRACTION_PROMPT
+) -> dict[str, Any]:
+    """Make a single Gemini REST call; raise OCRError on any failure.
+
+    `prompt` defaults to the invoice-field extraction prompt; segmentation_service
+    passes its own boundary-detection prompt through the same call so a second
+    PDF-capable Gemini client never needs to exist.
+    """
     api_key = settings.GEMINI_API_KEY.get_secret_value()
     if not api_key:
         raise OCRError("GEMINI_API_KEY is not configured", error_code="OCR_MISCONFIGURED")
@@ -254,7 +261,7 @@ async def _call_gemini_api(image_bytes: bytes, mime_type: str = "image/jpeg") ->
         "contents": [
             {
                 "parts": [
-                    {"text": _EXTRACTION_PROMPT},
+                    {"text": prompt},
                     {"inline_data": {"mime_type": mime_type, "data": encoded}},
                 ]
             }

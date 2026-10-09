@@ -64,6 +64,35 @@ def _gr_reference(sap_line: Any) -> tuple[str, str, str]:
     return "", "", ""
 
 
+def _real_grns(sap_line: Any) -> list[Any]:
+    """Every goods receipt actually posted against this line (not a placeholder)."""
+    return [
+        grn for grn in (getattr(sap_line, "GRN", None) or [])
+        if (grn.GR_NUMBER or "").strip().strip("0")
+    ]
+
+
+def _match_invoice_line(
+    sap_item_number: str, idx: int, inv_lines: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """Find the extracted invoice line that corresponds to a given PO line.
+
+    Same matching rules validation_service uses (exact, SAP-style ×10, or
+    positional fallback), so a line that validated against a PO item also
+    posts against that same line here rather than quietly drifting apart.
+    """
+    norm = sap_item_number.lstrip("0") or sap_item_number
+    for li in inv_lines:
+        ln = str(li.get("line_number") or "").strip()
+        if not ln:
+            continue
+        if ln == sap_item_number or ln.lstrip("0") == norm:
+            return li
+        if ln.isdigit() and str(int(ln) * 10) == sap_item_number:
+            return li
+    return inv_lines[idx] if idx < len(inv_lines) else None
+
+
 def build_miro_payload(
     extracted: dict[str, Any],
     sap_po: SAPPOResponse,
@@ -82,39 +111,77 @@ def build_miro_payload(
     gross_amount: float = _safe_float(extracted.get("gross_amount") or 0)
     today = _today_ddmmyyyy()
 
+    inv_lines: list[dict[str, Any]] = extracted.get("line_items") or []
     item_data: list[MIROItemData] = []
+    seq = 0  # counts actual MIRO lines emitted, not PO lines — a split-GR line emits more than one
 
     for idx, sap_line in enumerate(sap_po.PO_LINE_ITEMS):
-        invoice_doc_no = f"{(idx + 1) * 10:06d}"
-
-        # GR reference — empty when no goods receipt exists, never partial.
-        reference_no, reference_document_year, reference_doc_it = _gr_reference(sap_line)
-
-        # Tax code exactly from SAP PO; V0 (zero-rate) for lines with no tax code
         tax_code = sap_line.TAX_CODE.strip()  # blank for zero-tax lines
-
-        # Amounts from SAP PO — guarantees they match SAP's records
-        item_amount = _safe_float(sap_line.NET_AMOUNT)
-        gross_line = _safe_float(sap_line.GROSS_AMOUNT)
-        quantity = _safe_float(sap_line.ORDERED_QUANTITY)
         po_unit = sap_line.UOM.strip() or "EA"
         sap_item_number = sap_line.ITEM_NUMBER.strip()
+        line_net = _safe_float(sap_line.NET_AMOUNT)
+        line_qty = _safe_float(sap_line.ORDERED_QUANTITY)
+        unit_rate = (line_net / line_qty) if line_qty else 0.0
 
-        item_data.append(
-            MIROItemData(
-                invoice_document_no=invoice_doc_no,
-                po_number=po_number,
-                po_item=sap_item_number,
-                reference_no=reference_no,
-                reference_document_year=reference_document_year,
-                reference_doc_it=reference_doc_it,
-                tax_code=tax_code,
-                item_amount=item_amount,
-                quantity=quantity,
-                po_unit=po_unit,
-                tax_amount=0,
-            )
+        # What THIS invoice actually bills on this line — not what the PO
+        # ordered. A full-delivery invoice (the common case) specifies the
+        # same quantity as the PO and this changes nothing; a partial invoice
+        # specifies less, and posting the PO's full quantity instead would
+        # leave the line items totalling more than the invoice's own header
+        # gross amount — exactly the mismatch that produces "Balance not zero".
+        inv_line = _match_invoice_line(sap_item_number, idx, inv_lines)
+        invoiced_qty = _safe_float(inv_line.get("quantity")) if inv_line else 0.0
+        qty_to_post = (
+            invoiced_qty if 0 < invoiced_qty < line_qty - 1e-6 else line_qty
         )
+
+        grns = _real_grns(sap_line)
+
+        if not grns:
+            # Not GR-based — no reference, post whatever quantity this invoice
+            # actually bills (full net amount only when billing the full line,
+            # otherwise price × quantity so partial lines don't overstate it).
+            amount = line_net if qty_to_post >= line_qty - 1e-6 else round(unit_rate * qty_to_post, 2)
+            seq += 1
+            item_data.append(MIROItemData(
+                invoice_document_no=f"{seq * 10:06d}",
+                po_number=po_number, po_item=sap_item_number,
+                reference_no="", reference_document_year="", reference_doc_it="",
+                tax_code=tax_code, item_amount=amount, quantity=qty_to_post,
+                po_unit=po_unit, tax_amount=0,
+            ))
+            continue
+
+        # GR-based — one MIRO line per GR actually consumed by this invoice,
+        # each referencing its own GR number and carrying only the quantity
+        # taken from that GR. Confirmed with SAP MM: never pick one GR
+        # arbitrarily while invoicing the full (or a partial) line — the GR
+        # reference and that line's quantity must agree. GRs are consumed in
+        # order until the invoiced quantity is used up, so a full invoice
+        # against a split receipt still emits one line per GR (as before),
+        # and a partial invoice consumes only as many GRs as it actually covers.
+        remaining = qty_to_post
+        for grn in grns:
+            if remaining <= 1e-9:
+                break
+            gr_qty = _safe_float(grn.GR_QUANTITY)
+            take = min(gr_qty, remaining)
+            amount = round(unit_rate * take, 2)
+            seq += 1
+            item_data.append(MIROItemData(
+                invoice_document_no=f"{seq * 10:06d}",
+                po_number=po_number, po_item=sap_item_number,
+                reference_no=grn.GR_NUMBER.strip(),
+                reference_document_year=_gr_year(grn.GR_DATE),
+                reference_doc_it=(grn.GR_ITEM_NUMBER or "").strip(),
+                tax_code=tax_code, item_amount=amount, quantity=take,
+                po_unit=po_unit, tax_amount=0,
+            ))
+            remaining -= take
+        # remaining > 0 here means the invoice bills more than any known GR
+        # covers — that disagreement is what the receipt-confirmed / value
+        # gates upstream exist to catch before this payload is ever built, so
+        # it is not re-litigated here.
 
     miro_data = MIROData(
         document_date=invoice_date,

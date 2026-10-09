@@ -1,6 +1,6 @@
 """Generic async repository providing CRUD primitives over a SQLAlchemy table."""
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 import structlog
 from sqlalchemy import delete, func, select, update
@@ -10,8 +10,19 @@ from src.models.base import Base
 
 log = structlog.get_logger(__name__)
 
+# PEP 695's `class BaseRepository[T: Base]:` needs Python 3.12 — the
+# Dockerfile pins 3.11 (matching pyproject.toml's own declared
+# `requires-python = ">=3.11"` and what CI actually tests against), so that
+# syntax is a SyntaxError the moment this module is imported in the real
+# container. It parsed fine everywhere this was developed only because the
+# machine doing the editing happened to run a newer interpreter — nothing
+# in the project's own stated target ever supported it. TypeVar + Generic[T]
+# is the exact same construct, just spelled the way every Python since 3.5
+# understands.
+T = TypeVar("T", bound=Base)
 
-class BaseRepository[T: Base]:
+
+class BaseRepository(Generic[T]):
     """Async CRUD wrapper around a single SQLAlchemy ORM table.
 
     Concrete repositories extend this class with model-specific queries.

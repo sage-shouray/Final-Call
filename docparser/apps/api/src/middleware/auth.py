@@ -33,8 +33,13 @@ _AUTH_WHITELIST = frozenset({
     "/api/openapi.json",
 })
 
-# Prefixes that are always public (Swagger UI assets, WebSocket endpoints)
-_AUTH_WHITELIST_PREFIXES = ("/api/docs", "/api/redoc", "/openapi", "/api/ws")
+# Prefixes that are always public (Swagger UI assets, WebSocket endpoints).
+# /api/sap/notifications is here too: the caller is SAP's own system, not a
+# logged-in user, so it has no JWT to present — it authenticates with its own
+# X-API-Key check instead (see routers/sap_notifications.py). Without this
+# entry the blanket JWT check here rejects the request before that route is
+# ever reached, which is exactly the 401 seen when SAP's team first tried it.
+_AUTH_WHITELIST_PREFIXES = ("/api/docs", "/api/redoc", "/openapi", "/api/ws", "/api/sap/notifications")
 
 
 def _is_whitelisted(path: str) -> bool:

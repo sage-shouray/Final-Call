@@ -4,9 +4,10 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import {
   ArrowLeft, ChevronDown, ChevronUp,
   CheckCircle2, Clock, AlertCircle, Loader2,
-  FileText, X, ClipboardList,
+  FileText, X, ClipboardList, Layers,
 } from 'lucide-react';
 import { useDocument }          from '@/hooks/useDocument';
+import { useDocumentGroup }     from '@/hooks/useDocumentGroup';
 import { useDocumentWebSocket } from '@/hooks/useDocumentWebSocket';
 import { StatusPill }    from '@/components/ui/StatusPill';
 import { TCodeChip }     from '@/components/ui/TCodeChip';
@@ -458,10 +459,81 @@ function SummaryStrip({ doc }: { doc: Document }) {
   );
 }
 
+// ─── Multi-invoice tab bar ──────────────────────────────────────────────────
+//
+// A document split out of a merged PDF carries a `segmentation.group_id`
+// linking it to its siblings. Rather than making the user hunt through the
+// main document list for "the other 2 invoices from that upload", every
+// document in the group is shown as a tab here, each one the full detail
+// view below — review and posting work exactly the same per tab as it does
+// for any single-invoice document.
+
+function GroupTabs({
+  groupId, activeId, onSelect,
+}: { groupId: string; activeId: string; onSelect: (id: string) => void }) {
+  const { data } = useDocumentGroup(groupId);
+  const docs = data?.documents ?? [];
+  if (docs.length <= 1) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 dark:border-indigo-900 dark:bg-indigo-950/30">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-400">
+        <Layers className="h-3.5 w-3.5" />
+        {docs.length} invoices found in this upload:
+      </div>
+      {docs.map((d) => (
+        <button
+          key={d.document_id}
+          type="button"
+          onClick={() => onSelect(d.document_id)}
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+            d.document_id === activeId
+              ? 'border-indigo-600 bg-indigo-600 text-white'
+              : 'border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-neutral-900 dark:text-indigo-400 dark:hover:bg-indigo-950/50',
+          )}
+        >
+          Invoice {d.part ?? '—'}
+          {d.invoice_no ? <span className="font-mono opacity-80">· {d.invoice_no}</span> : null}
+          {d.forced_manual_review && (
+            <AlertCircle className="h-3 w-3 text-amber-500" />
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
+//
+// A thin wrapper: resolves which document is active (the URL's :id, unless a
+// tab has been clicked), shows the group tab bar when this document came from
+// a split multi-invoice PDF, and renders the full detail view for whichever
+// document is currently selected.
 
 export default function DocumentDetailPage() {
-  const { id }    = useParams<{ id: string }>();
+  const { id: routeId } = useParams<{ id: string }>();
+  const [activeId, setActiveId] = useState<string | undefined>(routeId);
+
+  // A fresh navigation to a different document id resets the active tab.
+  useEffect(() => { setActiveId(routeId); }, [routeId]);
+
+  const { data: routeDoc } = useDocument(routeId);
+  const groupId = routeDoc?.source_metadata?.segmentation?.group_id;
+
+  return (
+    <>
+      {groupId && activeId && (
+        <div className="px-6 pt-6">
+          <GroupTabs groupId={groupId} activeId={activeId} onSelect={setActiveId} />
+        </div>
+      )}
+      <DocumentDetailView id={activeId ?? routeId} />
+    </>
+  );
+}
+
+function DocumentDetailView({ id }: { id: string | undefined }) {
   const navigate  = useNavigate();
   const qc        = useQueryClient();
   const [auditOpen, setAuditOpen] = useState(false);

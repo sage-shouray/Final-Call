@@ -6,13 +6,17 @@ from typing import Any
 
 import structlog
 
-from src.schemas.sap import GRNItemData, GRNPayload, GRNResponse, SAPPOResponse
+from src.schemas.sap import GRN103ItemData, GRN103Payload, GRNItemData, GRNPayload, GRNResponse, SAPPOResponse
 
 log = structlog.get_logger(__name__)
 
 
 def _today_ddmmyyyy() -> str:
     return datetime.now(UTC).strftime("%d.%m.%Y")
+
+
+def _today_yyyymmdd() -> str:
+    return datetime.now(UTC).strftime("%Y%m%d")
 
 
 def _safe_float(value: Any) -> float:
@@ -51,6 +55,70 @@ def build_grn_payload(
         posting_date=today,
         document_date=today,
         po_items=po_items,
+    )
+
+
+def build_grn_103_payload(
+    extracted: dict[str, Any],
+    sap_po: SAPPOResponse,
+    plant: str = "",
+    storage_location: str = "",
+) -> GRN103Payload:
+    """Build the movement-type-103 GRN payload for the quality-hold workflow.
+
+    Goods are received into blocked stock pending inspection (Sangam's process),
+    not straight into unrestricted stock, so this hits a different endpoint
+    (zmigo_103/GRN_103) with a different shape than the standard GRN above —
+    notably a received quantity (ENTRY_QNT, what this invoice actually covers)
+    kept separate from the PO's ordered quantity (PO_PR_QNT, for reference),
+    since a partial delivery receives less than the PO asked for.
+    """
+    from src.config import settings
+
+    po_number: str = extracted.get("po_number") or sap_po.PO_NUMBER or ""
+    vendor: str = sap_po.VENDOR_ID.strip()
+    site = plant or storage_location or settings.SAP_COMPANY_CODE
+    today = _today_yyyymmdd()
+
+    inv_lines: list[dict[str, Any]] = extracted.get("line_items") or []
+    inv_qty_by_line = {
+        str(li.get("line_number") or "").strip().lstrip("0"): li.get("quantity")
+        for li in inv_lines
+    }
+
+    items: list[GRN103ItemData] = []
+    for sap_line in sap_po.PO_LINE_ITEMS:
+        po_item = sap_line.ITEM_NUMBER.strip()
+        ordered_qty = _safe_float(sap_line.ORDERED_QUANTITY)
+        # The quantity THIS invoice is receiving — falls back to the full PO
+        # ordered quantity when the invoice doesn't carry its own line match
+        # (a single-line invoice covering the whole PO is the common case).
+        invoiced_qty = inv_qty_by_line.get(po_item.lstrip("0"))
+        entry_qty = _safe_float(invoiced_qty) if invoiced_qty is not None else ordered_qty
+
+        def _fmt(q: float) -> str:
+            return str(int(q)) if q == int(q) else str(q)
+
+        items.append(GRN103ItemData(
+            PO_NUMBER=po_number,
+            PO_ITEM=po_item,
+            MATERIAL=sap_line.MATERIAL_CODE.strip(),
+            PLANT=site,
+            STGE_LOC=site,
+            VENDOR=vendor,
+            ENTRY_QNT=_fmt(entry_qty),
+            ENTRY_UOM=sap_line.UOM.strip() or "EA",
+            PO_PR_QNT=_fmt(ordered_qty),
+            ORDERPR_UN=sap_line.UOM.strip() or "EA",
+        ))
+
+    log.info("GRN-103 payload built", po_number=po_number, vendor=vendor, line_count=len(items))
+
+    return GRN103Payload(
+        PSTNG_DATE=today,
+        DOC_DATE=today,
+        REF_DOC_NO=po_number,
+        items=items,
     )
 
 

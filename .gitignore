@@ -11,3 +11,10 @@
 
 # k6 summary exports
 docparser/loadtest/*.json
+
+# Old git history archive containing real customer invoice data — never commit.
+.git.zip
+
+# Ad-hoc local test files generated while exercising the segmentation feature.
+docparser/apps/api/scanned_test.pdf
+docparser/apps/api/scanned_test_5page.pdf

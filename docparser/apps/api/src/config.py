@@ -4,13 +4,33 @@ from pathlib import Path
 from typing import Annotated
 
 from pydantic import (
-    AnyHttpUrl,
     Field,
     RedisDsn,
     SecretStr,
-    field_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _env_file_candidates() -> tuple[Path, ...]:
+    """Every plausible .env location, skipping any past the filesystem root.
+
+    Inside the built image this file lives at /app/src/config.py — the
+    Dockerfile's `COPY src/ ./src/` puts it only two real directories below
+    root. `parents[3]` (docparser/.env, the layout of a local checkout) does
+    not exist at that depth, and indexing a Path's .parents past its length
+    raises IndexError immediately — not "file not found", which pydantic-
+    settings would have silently skipped. The container doesn't need that
+    candidate anyway: docker-compose's own `env_file:` already injects the
+    real environment before this process starts. This list exists for running
+    the API directly with `uvicorn`, outside a container.
+    """
+    here = Path(__file__).resolve()
+    candidates: list[Path] = []
+    if len(here.parents) > 3:
+        candidates.append(here.parents[3] / ".env")   # docparser/.env  (local checkout)
+    if len(here.parents) > 1:
+        candidates.append(here.parents[1] / ".env")   # apps/api/.env   (local)
+    return tuple(candidates)
 
 
 class Settings(BaseSettings):
@@ -23,10 +43,7 @@ class Settings(BaseSettings):
     # so the result no longer depends on cwd. Later files win, so apps/api/.env
     # keeps overriding the root for local development.
     model_config = SettingsConfigDict(
-        env_file=(
-            Path(__file__).resolve().parents[3] / ".env",   # docparser/.env  (docker)
-            Path(__file__).resolve().parents[1] / ".env",   # apps/api/.env   (local)
-        ),
+        env_file=_env_file_candidates(),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
@@ -72,14 +89,23 @@ class Settings(BaseSettings):
     RATE_LIMIT_ADMIN: Annotated[int, Field(ge=1)] = 300
 
     # ── CORS ──────────────────────────────────────────────────────────────
-    CORS_ORIGINS: list[AnyHttpUrl | str] = ["http://localhost:3000"]
+    # A plain string, not list[...]: pydantic-settings tries to JSON-decode
+    # any complex-typed field read from a real OS environment variable before
+    # a field_validator ever runs, and "https://ap.uvira.ai" is not valid
+    # JSON. That decode failure crashed startup instantly — before this class
+    # even finished constructing, so no route ever ran to reveal it via a
+    # request. It only surfaced now: local runs load .env through pydantic-
+    # settings' own dotenv reader, a different source that tolerated a bare
+    # comma-separated string; Docker Compose's `env_file:` instead injects
+    # the same value as a genuine OS environment variable, hitting the
+    # stricter path. Same value, two different parsers, one broke silently
+    # for months because nothing had run this in Docker before.
+    CORS_ORIGINS: str = "http://localhost:3000"
 
-    @field_validator("CORS_ORIGINS", mode="before")
-    @classmethod
-    def parse_cors(cls, v: str | list[str]) -> list[str]:
-        if isinstance(v, str):
-            return [o.strip() for o in v.split(",") if o.strip()]
-        return v
+    @property
+    def cors_origin_list(self) -> list[str]:
+        """CORS_ORIGINS split on commas, for CORSMiddleware's allow_origins."""
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
     # ── SAP ───────────────────────────────────────────────────────────────
     SAP_BASE_URL: str = "http://103.206.131.27:8081"
@@ -93,6 +119,13 @@ class Settings(BaseSettings):
     # Leading digits of a SAP PO number, used by the fast identity scrape to
     # recognise a PO on the page. Comma-separated; 45 = standard PO.
     SAP_PO_PREFIXES: str = "45,44"
+
+    # ── Inbound SAP notifications ─────────────────────────────────────────
+    # Shared secret SAP's side sends back on every notification POST, checked
+    # against the X-API-Key header. Blank disables the check entirely — never
+    # acceptable once this is reachable from outside, but lets the endpoint be
+    # exercised locally before a real key exists.
+    SAP_NOTIFICATION_API_KEY: SecretStr = Field(default="")
 
     # ── Ingest pipeline ───────────────────────────────────────────────────
     # Run the fast identity + SAP routing pass alongside OCR on upload.
