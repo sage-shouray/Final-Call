@@ -183,6 +183,15 @@ def build_miro_payload(
         # gates upstream exist to catch before this payload is ever built, so
         # it is not re-litigated here.
 
+    # CALC_TAX_IND tells SAP "calculate tax using each line's tax code" — sending
+    # "X" when every line's tax code is blank (a genuinely zero-rated/exempt
+    # invoice, confirmed on a real PO today) gives SAP nothing to calculate
+    # from, and it rejects the posting: "Enter value in either field
+    # HEADERDATA-CALC_TAX_IND or field TAX_AMOUNT". Only ask SAP to calculate
+    # tax when at least one line actually carries a tax code to calculate it
+    # from.
+    calc_tax_ind = _CALC_TAX_IND if any(item.tax_code for item in item_data) else ""
+
     miro_data = MIROData(
         document_date=invoice_date,
         posting_date=today,
@@ -190,7 +199,7 @@ def build_miro_payload(
         company_code=sap_po.COM_CODE.strip(),
         currency=currency,
         gross_amount=gross_amount,
-        calc_tax_ind=_CALC_TAX_IND,
+        calc_tax_ind=calc_tax_ind,
         payment_terms=_DEFAULT_PAYMENT_TERMS,
         baseline_date=today,
         business_place=sap_po.BUYER_ID.strip(),
