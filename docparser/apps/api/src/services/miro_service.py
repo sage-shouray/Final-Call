@@ -109,6 +109,48 @@ def _match_invoice_line(
     return inv_lines[idx] if idx < len(inv_lines) else None
 
 
+def check_release_coverage(extracted: dict[str, Any], sap_po: SAPPOResponse) -> dict[str, Any]:
+    """Check 2 of 2 in the quality-hold workflow: invoice vs what SAP has
+    actually released (movement 105), run right before posting MIRO Park —
+    the real 3-way check (PO ordered, GRN released, invoice billed).
+
+    build_miro_payload already caps what it sends at the released quantity,
+    so a shortfall can never silently over-post — but capping alone means a
+    genuine shortfall (invoice bills more than has been released) passes
+    through with no visible record of it. This makes that shortfall explicit
+    instead, so it can block the posting and be reviewed rather than quietly
+    invoicing for less than the vendor billed.
+    """
+    inv_lines: list[dict[str, Any]] = extracted.get("line_items") or []
+    shortfalls: list[dict[str, Any]] = []
+
+    for idx, sap_line in enumerate(sap_po.PO_LINE_ITEMS):
+        po_item = sap_line.ITEM_NUMBER.strip()
+        released_grns = [
+            g for g in _real_grns(sap_line)
+            if (g.MOVEMENT_TYPE or "").strip() == "105"
+        ]
+        if not released_grns:
+            continue  # no release-tracked GRNs on this line — not a quality-hold PO, nothing to check
+
+        released_qty = sum(_safe_float(g.GR_QUANTITY) for g in released_grns)
+        inv_line = _match_invoice_line(po_item, idx, inv_lines)
+        invoiced_qty = _safe_float(inv_line.get("quantity")) if inv_line else 0.0
+
+        if invoiced_qty > released_qty + 1e-6:
+            shortfalls.append({
+                "po_item": po_item,
+                "invoiced_qty": invoiced_qty,
+                "released_qty": released_qty,
+                "detail": (
+                    f"PO item {po_item}: invoice bills {invoiced_qty:g}, but only "
+                    f"{released_qty:g} has been released from quality hold so far."
+                ),
+            })
+
+    return {"ok": not shortfalls, "shortfalls": shortfalls}
+
+
 def build_miro_payload(
     extracted: dict[str, Any],
     sap_po: SAPPOResponse,

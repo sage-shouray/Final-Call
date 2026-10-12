@@ -58,6 +58,27 @@ async def run_migo_103_direct(document_id: str) -> None:
                 bound_log.warning("PO has no line items — cannot post GRN-103")
                 return
 
+            # Check 1 of 2 in Sangam's workflow: invoice vs PO, before any goods
+            # receipt exists. A wrong invoice should never get a blocked-stock
+            # GRN created for it in the first place — that GRN would still need
+            # manually reversing in SAP even though the invoice itself was the
+            # problem. The second check (invoice vs what's actually released)
+            # happens later, in run_miro_park_direct, right before posting.
+            from src.services.validation_service import validate_invoice_against_po
+            pre_check = await validate_invoice_against_po(extracted, sap_po)
+            if not pre_check.get("is_valid"):
+                reason = pre_check.get("recommendation") or "Invoice does not reconcile against the PO."
+                bound_log.warning("pre-GRN-103 check failed — not posting", reason=reason,
+                                   mismatches=pre_check.get("mismatches"))
+                await doc_repo.update_status(doc_id, DocumentStatus.FAILED, error_entry={
+                    "stage": "migo_103_precheck",
+                    "message": f"GRN-103 not posted — invoice does not match the PO. {reason}",
+                    "detail": str(pre_check.get("mismatches")),
+                    "timestamp": datetime.now(UTC).isoformat(),
+                })
+                await session.commit()
+                return
+
             grn_payload = build_grn_103_payload(extracted, sap_po)
             grn_resp = await sap_service.post_grn_103(grn_payload)
             bound_log.info("GRN-103 response received", grn_number=grn_resp.grn_number, success=grn_resp.success)

@@ -555,6 +555,25 @@ async def run_miro_park_direct(document_id: str, posted_by: str = "system") -> N
             # Bind to the document's customer so the call goes to their SAP, not a shared one.
             sap_service = get_sap_service(doc.get("tenant_id"))
             sap_po = await sap_service.fetch_po_details(po_number) if po_number else SAPPOResponse()
+
+            # Check 2 of 2 in the quality-hold workflow: invoice vs what has
+            # actually been released (movement 105) — see check_release_coverage's
+            # own docstring for why this needs to be explicit rather than relying
+            # only on build_miro_payload's silent quantity cap.
+            from src.services.miro_service import check_release_coverage
+            coverage = check_release_coverage(extracted, sap_po)
+            if not coverage["ok"]:
+                reason = " ".join(s["detail"] for s in coverage["shortfalls"])
+                bound_log.error("MIRO park refused — invoice exceeds released quantity", reason=reason)
+                await doc_repo.update_status(doc_id, DocumentStatus.VALIDATED, error_entry={
+                    "stage": "miro_parking_precheck",
+                    "message": f"MIRO park not posted — {reason}",
+                    "detail": str(coverage["shortfalls"]),
+                    "timestamp": datetime.now(UTC).isoformat(),
+                })
+                await session.commit()
+                return
+
             payload = build_miro_payload(extracted, sap_po, sap_validation)
             park_resp = await sap_service.park_miro(payload)
 
