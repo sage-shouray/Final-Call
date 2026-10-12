@@ -57,7 +57,32 @@ BLOCKING_GATES = frozenset({
     "tax_matches_po",
     "not_duplicate",
     "segmentation_confidence",
+    "quality_release_confirmed",
 })
+
+
+async def _is_quality_hold_tenant(tenant_id: str | None) -> bool:
+    """True for a tenant whose goods receipt goes into blocked stock first.
+
+    Mirrors pipeline_worker's helper of the same purpose — kept as a small,
+    separate copy rather than a shared import to avoid a dependency between
+    the pipeline and the gate evaluator; both are the same stand-in for a
+    real per-tenant workflow-profile lookup, which doesn't exist yet.
+    """
+    if not tenant_id:
+        return False
+    from sqlalchemy import select
+
+    from src.database import AsyncSessionLocal
+    from src.models.tenant import TenantRow
+
+    async with AsyncSessionLocal() as session:
+        tenant = (await session.execute(
+            select(TenantRow).where(TenantRow.id == tenant_id)
+        )).scalar_one_or_none()
+    if not tenant:
+        return False
+    return "sangam" in (tenant.slug or "").lower() or "sangam" in (tenant.name or "").lower()
 
 
 async def blocking_failures(doc: dict[str, Any]) -> list[dict[str, Any]]:
@@ -151,6 +176,29 @@ async def evaluate(doc: dict[str, Any]) -> dict[str, Any]:
         ))
     else:
         gates.append(_gate("segmentation_confidence", True, "Not split from a multi-invoice PDF."))
+
+    # ── 0b. Quality-hold workflow — goods received into blocked stock must
+    # be released by SAP before this invoice may post, on any path ─────────
+    # A document whose GRN posted with movement 103 (Sangam's workflow) sits
+    # in blocked/quality stock, not unrestricted — posting the invoice before
+    # SAP confirms the release means paying for stock nobody has actually
+    # cleared yet. The only route out of this gate is the SAP notification →
+    # MIRO Park flow (sap_notification_worker.py), which itself is not
+    # subject to this evaluation (it calls the posting worker directly, the
+    # same last-line-of-defence pattern every other posting path uses) —
+    # this gate exists to stop the *other* paths (auto-post, a manual click)
+    # from reaching SAP first.
+    grn_posting = doc.get("grn_posting") or {}
+    pending_release = bool(grn_posting.get("pending_quality_release"))
+    already_parked = (doc.get("miro_parking") or {}).get("status") == "success"
+    if pending_release and not already_parked:
+        gates.append(_gate(
+            "quality_release_confirmed", False,
+            "Goods receipt is in blocked/quality stock — awaiting SAP's "
+            "release notification before this invoice can post.",
+        ))
+    else:
+        gates.append(_gate("quality_release_confirmed", True, "Not awaiting a quality release."))
 
     # ── 1. Routing resolved and actionable ────────────────────────────────
     route = routing.get("route") or ""

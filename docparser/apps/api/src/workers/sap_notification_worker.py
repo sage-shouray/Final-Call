@@ -60,6 +60,19 @@ async def _process_one(row_id: str) -> None:
 
         notif.processed = True
         notif.document_id = doc.document_id
+
+        # Clear the quality-hold flag BEFORE attempting the park, not after.
+        # autopost_service's `quality_release_confirmed` gate blocks every
+        # posting path — including this one's own last-line-of-defence check
+        # inside run_miro_park_direct — while this flag is set, so clearing it
+        # only on a successful park would make the park permanently unable to
+        # pass its own gate. This notification IS the release confirmation,
+        # so it is the one place allowed to clear it, ahead of the attempt.
+        grn_posting = dict(doc.grn_posting or {})
+        grn_posting["pending_quality_release"] = False
+        grn_posting["quality_released_at"] = notif.received_at.isoformat() if notif.received_at else None
+        doc.grn_posting = grn_posting
+
         await session.commit()
 
     bound.info("matched document — auto-parking MIRO", document_id=doc.document_id)

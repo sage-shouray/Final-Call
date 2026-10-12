@@ -84,25 +84,6 @@ async def _fast_track(document_id: str, file_bytes: bytes, tenant_id: str | None
     )
     await _persist(document_id, {"routing": routing})
 
-    # Sangam's quality-hold workflow: auto-post the goods receipt into blocked
-    # stock (movement 103) the moment a PO resolves — no manager click, since a
-    # person only re-enters this flow later, at quality release. This is a
-    # stand-in for a real per-tenant workflow-profile lookup, which doesn't
-    # exist yet; today Sangam is the only tenant with an automated GR step, so
-    # it is checked directly rather than through a registry. Never allowed to
-    # affect the rest of the pipeline — OCR and routing continue regardless.
-    if routing.get("resolved") and routing.get("po_number") and await _is_quality_hold_tenant(tenant_id):
-        import asyncio as _asyncio
-        from src.workers.migo_worker import run_migo_103_direct
-
-        async def _auto_grn_103() -> None:
-            try:
-                await run_migo_103_direct(document_id)
-            except Exception as exc:
-                log.error("auto GRN-103 failed", document_id=document_id, error=str(exc))
-
-        _asyncio.create_task(_auto_grn_103(), name=f"grn103-{document_id}")
-
     # Apply the subtype the moment routing resolves — roughly a second in, rather
     # than waiting ~17 s for OCR. This is what lets the UI show the route while
     # extraction is still running.
@@ -255,6 +236,30 @@ async def run_pipeline(document_id: str) -> None:
         })
         bound_log.warning("extraction produced no data — skipping auto-post evaluation")
         return
+
+    # Sangam's quality-hold workflow: auto-post the goods receipt into blocked
+    # stock (movement 103) once BOTH the PO has resolved and OCR has actually
+    # read the invoice's own line-item quantities. Firing this right after
+    # routing (the fast ~1s track) instead of here sent the PO's full ordered
+    # quantity to SAP every time, because `extracted.line_items` does not exist
+    # until the OCR track — which can take ~15-20s — finishes; a real invoice
+    # for a partial delivery was posted as if it covered the whole PO, which
+    # SAP correctly rejected. This is a stand-in for a real per-tenant
+    # workflow-profile lookup, which doesn't exist yet; today Sangam is the
+    # only tenant with an automated GR step, so it is checked directly rather
+    # than through a registry. Never allowed to affect the rest of the
+    # pipeline — auto-post evaluation below proceeds regardless.
+    routing = (fast_result or {}).get("routing") or {}
+    if routing.get("resolved") and routing.get("po_number") and await _is_quality_hold_tenant(doc.get("tenant_id")):
+        from src.workers.migo_worker import run_migo_103_direct
+
+        async def _auto_grn_103() -> None:
+            try:
+                await run_migo_103_direct(document_id)
+            except Exception as exc:
+                log.error("auto GRN-103 failed", document_id=document_id, error=str(exc))
+
+        asyncio.create_task(_auto_grn_103(), name=f"grn103-{document_id}")
 
     decision = await _apply_routing(document_id)
 
