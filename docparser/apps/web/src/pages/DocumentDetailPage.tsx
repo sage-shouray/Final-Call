@@ -224,9 +224,32 @@ function getTimeline(doc: Document): TimelineStep[] {
   const miro = doc.miro_posting as { miro_number?: string; posted_at?: string; status?: string } | null;
   const park = doc.miro_parking as { park_number?: string; parked_at?: string; status?: string; message?: string } | null;
   const isParkedCase = park?.status === 'success' || status === DocumentStatus.PARKED;
+
+  // Quality-hold tenants (Sangam) get a real goods receipt (GRN-103) even
+  // though tcode stays MIRO — the isMigo branch above only fires for
+  // tcode === 'MIGO', so without this a genuine GR that happened would never
+  // show up in the timeline at all.
+  const grn103 = doc.grn_posting as {
+    grn_number?: string; posted_at?: string; status?: string; pending_quality_release?: boolean;
+  } | null;
+  const grn103Step: TimelineStep[] = grn103 ? [{
+    key:         'grn103',
+    label:       grn103.pending_quality_release ? 'Goods Receipt — awaiting quality release' : 'Goods Receipt (GRN-103)',
+    description: grn103.status === 'success'
+      ? `GRN: ${grn103.grn_number}${grn103.pending_quality_release ? ' — blocked/quality stock, awaiting SAP release' : ''}`
+      : grn103.status === 'failed'
+        ? 'Goods receipt failed — see error log'
+        : 'Pending',
+    timestamp:   grn103.posted_at ?? null,
+    done:        grn103.status === 'success' && !grn103.pending_quality_release,
+    active:      grn103.status === 'success' && !!grn103.pending_quality_release,
+    failed:      grn103.status === 'failed',
+  }] : [];
+
   return [
     step0,
     step1,
+    ...grn103Step,
     {
       key:         'validated',
       label:       'SAP PO Validation',

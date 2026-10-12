@@ -66,6 +66,12 @@ async def run_migo_103_direct(document_id: str) -> None:
             # happens later, in run_miro_park_direct, right before posting.
             from src.services.validation_service import validate_invoice_against_po
             pre_check = await validate_invoice_against_po(extracted, sap_po)
+            # Saved regardless of pass/fail — this IS the document's SAP PO
+            # validation, same field the dedicated /validate endpoint writes,
+            # just run automatically here instead of waiting for a manual
+            # click. Without this the check genuinely ran but the document
+            # (and the UI's "SAP PO Validation" timeline step) never showed it.
+            await doc_repo.update(doc_id, {"sap_validation": pre_check})
             if not pre_check.get("is_valid"):
                 reason = pre_check.get("recommendation") or "Invoice does not reconcile against the PO."
                 bound_log.warning("pre-GRN-103 check failed — not posting", reason=reason,
