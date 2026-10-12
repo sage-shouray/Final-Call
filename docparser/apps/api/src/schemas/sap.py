@@ -12,6 +12,10 @@ from pydantic import BaseModel, Field
 class SAPGRNDetail(BaseModel):
     GR_NUMBER: str = ""
     GR_DATE: str = ""
+    # "103" = received into blocked/quality stock, "105" = released to
+    # unrestricted. Only present on tenants using the quality-hold workflow;
+    # a standard GR has no concept of this distinction and leaves it blank.
+    MOVEMENT_TYPE: str = ""
     GR_ITEM_NUMBER: str = ""
     PO_ITEM_NUMBER: str = ""
     MATERIAL_CODE: str = ""

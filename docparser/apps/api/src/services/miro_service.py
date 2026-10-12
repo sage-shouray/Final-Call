@@ -55,8 +55,12 @@ def _gr_reference(sap_line: Any) -> tuple[str, str, str]:
     Keyed on GR_NUMBER rather than on the GRN block being present, because a
     service line carries an SES number in SSES_NO and leaves GR_NUMBER empty —
     a truthy GRN block with nothing usable in it.
+
+    Reads through `_real_grns`, not the raw GRN list — on a quality-hold PO
+    that already has a released (105) entry, this must never pick an
+    unreleased (103) one just because it happens to come first.
     """
-    for grn in (getattr(sap_line, "GRN", None) or []):
+    for grn in _real_grns(sap_line):
         number = (grn.GR_NUMBER or "").strip()
         # All-zeros is SAP's way of saying "no document", not a document id.
         if number and number.strip("0"):
@@ -65,11 +69,23 @@ def _gr_reference(sap_line: Any) -> tuple[str, str, str]:
 
 
 def _real_grns(sap_line: Any) -> list[Any]:
-    """Every goods receipt actually posted against this line (not a placeholder)."""
-    return [
+    """Every goods receipt an invoice may actually be matched against.
+
+    A quality-hold PO (movement 103 → blocked, then 105 → released) carries
+    BOTH kinds of entry on the same line. A 103 entry is stock nobody has
+    actually released yet — referencing it would let an invoice post against
+    quantity still sitting in quality hold, which is exactly what the
+    quality-release gate elsewhere exists to prevent. When any 105 entries
+    exist, only they count; a line with no 105 entries at all (not yet
+    released, or a standard non-quality-hold PO where this distinction
+    doesn't exist) falls back to every entry, unchanged from before.
+    """
+    real = [
         grn for grn in (getattr(sap_line, "GRN", None) or [])
         if (grn.GR_NUMBER or "").strip().strip("0")
     ]
+    released = [grn for grn in real if (grn.MOVEMENT_TYPE or "").strip() == "105"]
+    return released if released else real
 
 
 def _match_invoice_line(
