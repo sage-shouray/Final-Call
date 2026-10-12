@@ -129,6 +129,8 @@ async def update_mailbox(
             row.poll_interval_s = max(15, int(body["poll_interval_s"] or 60))
         if "sender_allowlist" in body:
             row.sender_allowlist = list(body["sender_allowlist"] or [])
+        if "tenant_routes" in body:
+            row.tenant_routes = list(body["tenant_routes"] or [])
         if "auto_post_enabled" in body:
             row.auto_post_enabled = bool(body["auto_post_enabled"])
         if "enabled" in body:
