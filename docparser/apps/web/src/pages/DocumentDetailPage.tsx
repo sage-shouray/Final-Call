@@ -1182,6 +1182,28 @@ function DocumentDetailView({ id }: { id: string | undefined }) {
                     {park.message}
                   </p>
                 ) : null}
+                {/* Which goods receipt(s) this invoice was matched against —
+                    on a quality-hold document this is always a released (105)
+                    GRN, never one still sitting in blocked stock (103). */}
+                {(() => {
+                  type ParkItem = { reference_no?: string; quantity?: number };
+                  const items = (
+                    (park.payload_sent as { data?: { item_data?: ParkItem[] }[] } | undefined)
+                      ?.data?.[0]?.item_data ?? []
+                  ).filter((i) => i.reference_no);
+                  if (!items.length) return null;
+                  return (
+                    <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+                      Matched against GRN{items.length > 1 ? 's' : ''}:{' '}
+                      {items.map((i, idx) => (
+                        <span key={idx} className="font-mono">
+                          {i.reference_no}{i.quantity != null ? ` (${i.quantity})` : ''}
+                          {idx < items.length - 1 ? ', ' : ''}
+                        </span>
+                      ))}
+                    </p>
+                  );
+                })()}
               </div>
             )}
 
