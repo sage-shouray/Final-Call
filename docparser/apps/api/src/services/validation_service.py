@@ -63,14 +63,19 @@ async def validate_invoice_against_po(
         if inv_gstin != sap_gstin:
             mismatches.append(_mismatch("vendor_gstin", inv_gstin, sap_gstin, "error"))
 
-    # ── gross_amount — within ±1.00 (30%) ────────────────────────────────
+    # ── gross_amount — a ceiling, not equality (30%) ───────────────────────
+    # A partial delivery legitimately invoices less than the PO's full value
+    # — that is the normal case, not a mismatch. Only an invoice billing MORE
+    # than the PO authorises is a real problem. Scored exactly like
+    # autopost_service's within_po_value gate, so a document isn't held to a
+    # stricter standard here, before GRN-103, than it is everywhere else.
     inv_amount = _dec(extracted.get("gross_amount", "0"))
     sap_amount = _dec(sap_po.GROSS_AMOUNT)
-    amount_diff = abs(inv_amount - sap_amount)
-    if amount_diff <= Decimal("1.00"):
+    if sap_amount <= 0 or inv_amount <= sap_amount + Decimal("1.00"):
         header_scores["amount"] = 1.0
     else:
-        header_scores["amount"] = max(0.0, float(1 - amount_diff / max(sap_amount, Decimal("1"))))
+        overrun = inv_amount - sap_amount
+        header_scores["amount"] = max(0.0, float(1 - overrun / sap_amount))
         mismatches.append(_mismatch("gross_amount", str(inv_amount), str(sap_amount), "error"))
 
     # ── vendor_name — fuzzy ≥ 0.80 (20%) ─────────────────────────────────
