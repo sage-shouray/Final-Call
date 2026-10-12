@@ -253,13 +253,18 @@ async def run_pipeline(document_id: str) -> None:
     if routing.get("resolved") and routing.get("po_number") and await _is_quality_hold_tenant(doc.get("tenant_id")):
         from src.workers.migo_worker import run_migo_103_direct
 
-        async def _auto_grn_103() -> None:
-            try:
-                await run_migo_103_direct(document_id)
-            except Exception as exc:
-                log.error("auto GRN-103 failed", document_id=document_id, error=str(exc))
-
-        asyncio.create_task(_auto_grn_103(), name=f"grn103-{document_id}")
+        # Awaited, not backgrounded: autopost_service's quality_release_confirmed
+        # gate (evaluated right below, in _apply_routing) reads whatever
+        # `pending_quality_release` currently says on the document. A
+        # fire-and-forget task here raced that read — the gate ran before
+        # GRN-103 had written anything, saw nothing pending, and let a real
+        # auto-post through; the flag only showed up afterward, too late.
+        # The ~1-2s SAP round-trip this adds, only for quality-hold tenants,
+        # is the actual cost of the gate meaning anything.
+        try:
+            await run_migo_103_direct(document_id)
+        except Exception as exc:
+            log.error("auto GRN-103 failed", document_id=document_id, error=str(exc))
 
     decision = await _apply_routing(document_id)
 
