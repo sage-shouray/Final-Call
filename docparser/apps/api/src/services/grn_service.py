@@ -146,7 +146,14 @@ def parse_grn_response(raw: dict[str, Any]) -> GRNResponse:
     combined_message = " | ".join(message_parts)
     combined_lower = combined_message.lower()
 
-    # Detect MIGO already done conditions
+    # Detect MIGO already-done conditions — unambiguous phrases only. A real
+    # production response ("PU Ordered quantity exceeded by 40 EA") showed
+    # "ordered quantity exceeded" means something else entirely on at least
+    # one SAP flow: THIS attempt asked for more than is available, a genuine
+    # validation failure, not a prior success. Treating it as already_done
+    # reported a rejected GRN as a success — worse than the reverse mistake,
+    # since a human reviewing a correctly-flagged failure can catch it, but
+    # nothing catches a success that silently wasn't one.
     already_done = any(
         phrase in combined_lower
         for phrase in (
@@ -154,13 +161,12 @@ def parse_grn_response(raw: dict[str, Any]) -> GRNResponse:
             "already posted",
             "already exists",
             "already created",
-            "pu ordered quantity exceeded",   # SAP sends this when GRN already posted
-            "ordered quantity exceeded",
         )
     )
 
     grn_number = str(
-        raw.get("DOC_NO") or raw.get("GR_NUMBER") or raw.get("MATERIAL_DOCUMENT") or raw.get("GRN_NUMBER") or ""
+        raw.get("DOC_NO") or raw.get("GR_NUMBER") or raw.get("MATERIAL_DOCUMENT")
+        or raw.get("MATERIALDOCUMENT") or raw.get("GRN_NUMBER") or ""
     ).strip()
 
     if not grn_number and combined_message:
