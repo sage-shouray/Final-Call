@@ -301,14 +301,23 @@ def _mail_item(doc: dict[str, Any]) -> dict[str, Any]:
     autopost  = pipeline.get("autopost") or {}
     meta      = doc.get("source_metadata") or {}
     miro      = doc.get("miro_posting") or {}
+    park      = doc.get("miro_parking") or {}
     grn       = doc.get("grn_posting") or {}
     fb60      = doc.get("fb60_posting") or {}
 
     # What was actually done, in the order a reader cares about: a posted
     # document is finished, a held one needs a person, everything else is still
-    # moving or has failed.
+    # moving or has failed. A successful MIRO Park is also a finished state —
+    # this was missing entirely, so a genuinely parked document (Sangam's
+    # quality-hold flow ends here, not at a full post) fell through to
+    # "awaiting approval": the autopost decision shown is a one-time snapshot
+    # taken before the park happened and is never recomputed afterward, so
+    # nothing here naturally caught up with reality without checking `park`
+    # directly.
     if miro.get("status") == "success" or fb60.get("status") == "success":
         outcome, action = "posted", "Posted to SAP"
+    elif park.get("status") == "success":
+        outcome, action = "posted", "Parked to SAP"
     elif doc.get("status") == "failed":
         outcome, action = "failed", "Failed"
     elif routing.get("route") == "hold":
@@ -348,7 +357,7 @@ def _mail_item(doc: dict[str, Any]) -> dict[str, Any]:
         "decision":     autopost.get("decision", ""),
         "failed_gates": failed_gates,
         "grn_number":   grn.get("grn_number", ""),
-        "miro_number":  miro.get("miro_number", "") or fb60.get("fb60_number", ""),
+        "miro_number":  miro.get("miro_number", "") or fb60.get("fb60_number", "") or park.get("park_number", ""),
     }
 
 
