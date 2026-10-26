@@ -114,7 +114,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # jsdom (vitest's DOM environment) requires Node >=22.22 as of the
+          # version currently locked — CI needs a Node that can run the test
+          # suite. Production never runs tests or jsdom: the web Dockerfile
+          # builds on node:20-alpine and only runs `npm run build`, untouched
+          # by this.
+          node-version: '22'
           cache: npm
           cache-dependency-path: docparser/package-lock.json
 
