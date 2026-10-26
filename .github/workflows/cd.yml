@@ -14,15 +14,19 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
-    # main deliberately excluded: it's an old, divergent snapshot (not where
-    # active development happens) whose own CI runs produced a stray CD
-    # trigger here once — scoping this to the real working branch removes
-    # that ambiguity entirely.
-    branches: ["EXT\\+SEG"]
+    # The declarative `branches:` filter here does NOT reliably restrict
+    # which branch's CI completion triggers this — confirmed empirically: a
+    # run fired for main's CI before that run had even finished, despite
+    # main being excluded from this filter. The real branch gate is the
+    # job-level `if` below, which does a plain runtime string comparison
+    # against the actual triggering run's branch — that's the one that can
+    # be trusted.
 
 jobs:
   deploy:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'EXT+SEG'
     runs-on: ubuntu-latest
     environment: production
 
