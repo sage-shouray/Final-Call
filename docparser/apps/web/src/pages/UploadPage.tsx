@@ -201,8 +201,16 @@ export default function UploadPage() {
     if (event.event !== 'STATUS_CHANGED') return;
     const status = event.data?.status as DocumentStatus | undefined;
     if (!status) return;
-    if (status === DocumentStatus.EXTRACTED && state.step === 'extracting') {
-      fetchDocumentAndAdvance(state.documentId, 'extracted');
+    // Same reasoning as the polling fallback below: auto-post can carry a
+    // document straight past "extracted" before this event ever fires for
+    // it, so any status beyond EXTRACTING (other than a failure) counts as
+    // having reached this step too — not only an exact EXTRACTED match.
+    if (state.step === 'extracting' && status !== DocumentStatus.EXTRACTING && status !== DocumentStatus.FAILED) {
+      const landingStep: WizardStep =
+        status === DocumentStatus.POSTED || status === DocumentStatus.PARKED ? 'complete'
+        : status === DocumentStatus.EXTRACTED ? 'extracted'
+        : 'validated';
+      fetchDocumentAndAdvance(state.documentId, landingStep);
     }
     if (status === DocumentStatus.VALIDATED && state.step === 'validating') {
       fetchDocumentAndAdvance(state.documentId, 'validated');
@@ -259,9 +267,33 @@ export default function UploadPage() {
         // routing resolves ~1 s in while the status is still "extracting", and
         // the pipeline rail needs that as it lands rather than 17 s later.
         setState((prev) => ({ ...prev, document: doc }));
-        if (s === DocumentStatus.EXTRACTED && state.step === 'extracting') {
+
+        // With auto-post enabled, SAP can validate and post in the same pass
+        // that extraction finishes — the backend status jumps straight from
+        // "extracting" past "extracted" to "validated" or even "posted"/
+        // "parked" between two polls. The checks below used to require an
+        // exact match on "extracted", so that jump was never caught and the
+        // wizard stayed frozen on the extraction skeleton forever, even
+        // though the document had already finished. These now also treat
+        // "already further along than extracted" as reaching this step, so
+        // a fast auto-post can't strand the UI mid-wizard.
+        const ADVANCED_FROM_EXTRACTING = new Set<DocumentStatus>([
+          DocumentStatus.VALIDATED, DocumentStatus.SIMULATED, DocumentStatus.GR_POSTED,
+          DocumentStatus.POSTING, DocumentStatus.GR_POSTING, DocumentStatus.POSTED,
+          DocumentStatus.PARKED,
+        ]);
+        if (state.step === 'extracting' && s !== DocumentStatus.EXTRACTING && s !== DocumentStatus.FAILED) {
           clearInterval(pollRef.current);
-          setState((prev) => ({ ...prev, step: 'extracted', document: doc, editedData: doc.extracted ?? null }));
+          if (s === DocumentStatus.POSTED || s === DocumentStatus.PARKED) {
+            setState((prev) => ({ ...prev, step: 'complete', document: doc, editedData: doc.extracted ?? null }));
+          } else if (ADVANCED_FROM_EXTRACTING.has(s)) {
+            // Auto-post already validated (and possibly posted) this document —
+            // land on "validated" so the result is visible, with the extracted
+            // data populated as if the user had passed through "extracted" too.
+            setState((prev) => ({ ...prev, step: 'validated', document: doc, editedData: doc.extracted ?? null }));
+          } else {
+            setState((prev) => ({ ...prev, step: 'extracted', document: doc, editedData: doc.extracted ?? null }));
+          }
         } else if (s === DocumentStatus.GR_POSTED && state.step === 'gr_posting') {
           clearInterval(pollRef.current);
           setState((prev) => ({ ...prev, step: 'gr_posted', document: doc }));
