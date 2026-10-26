@@ -8,7 +8,12 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, "EXT+SEG"]
+    # GitHub's branch filters are glob patterns, not literal strings — "+" is
+    # a special glob character there, so the unescaped branch name never
+    # actually matched real pushes to EXT+SEG (confirmed: zero runs ever
+    # registered for it, despite the workflow being valid and active).
+    # Escaped here to match the branch name literally.
+    branches: [main, "EXT\\+SEG"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
