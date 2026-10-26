@@ -14,7 +14,11 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
-    branches: [main, "EXT\\+SEG"]
+    # main deliberately excluded: it's an old, divergent snapshot (not where
+    # active development happens) whose own CI runs produced a stray CD
+    # trigger here once — scoping this to the real working branch removes
+    # that ambiguity entirely.
+    branches: ["EXT\\+SEG"]
 
 jobs:
   deploy:
