@@ -8,7 +8,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, "EXT+SEG"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
