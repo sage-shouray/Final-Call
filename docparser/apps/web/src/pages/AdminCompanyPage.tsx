@@ -307,7 +307,7 @@ function UsersTab({ tenantId }: { tenantId: string }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {users.map(u => (
+            {users.map((u: any) => (
               <tr key={u.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
                 <td className="px-4 py-3 font-medium text-neutral-900 dark:text-white">{u.name}</td>
                 <td className="px-4 py-3 text-neutral-500">{u.email}</td>
@@ -438,7 +438,7 @@ function ApisTab({ tenantId }: { tenantId: string }) {
     finally { setTesting(null); qc.invalidateQueries({ queryKey: ['admin-apis', tenantId] }); }
   };
 
-  const grouped = apis.reduce<Record<string, ApiConfig[]>>((acc, a) => {
+  const grouped = (apis as ApiConfig[]).reduce<Record<string, ApiConfig[]>>((acc, a) => {
     (acc[a.workflow] ??= []).push(a); return acc;
   }, {});
 
@@ -523,7 +523,7 @@ function PricingTab({ tenantId }: { tenantId: string }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-pricing', tenantId] }),
   });
 
-  const total = pricing.reduce((s, p) => s + p.price_per_document, 0);
+  const total = pricing.reduce((s: number, p: any) => s + p.price_per_document, 0);
 
   if (isLoading) return <p className="text-sm text-neutral-400 py-8 text-center">Loading…</p>;
 
@@ -542,7 +542,7 @@ function PricingTab({ tenantId }: { tenantId: string }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {pricing.map(p => (
+            {pricing.map((p: any) => (
               <tr key={p.tcode} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/30">
                 <td className="px-5 py-3">
                   <p className="font-medium text-neutral-800 dark:text-white">{p.label}</p>
@@ -600,7 +600,7 @@ function DocsTab({ tenantId }: { tenantId: string }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {docs.map(d => (
+            {docs.map((d: any) => (
               <tr key={d.document_id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/30">
                 <td className="px-4 py-3 font-mono text-xs text-neutral-700 dark:text-neutral-300">{d.document_id}</td>
                 <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400 capitalize">{d.type.replace('_', ' ')}</td>
@@ -650,7 +650,7 @@ function BillingTab({ tenantId }: { tenantId: string }) {
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
             {data.line_items.length === 0 ? (
               <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-neutral-400">No billable documents processed this month yet.</td></tr>
-            ) : data.line_items.map(li => (
+            ) : data.line_items.map((li: any) => (
               <tr key={li.tcode} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/30">
                 <td className="px-4 py-3 font-medium text-neutral-800 dark:text-white">{li.label}</td>
                 <td className="px-4 py-3"><span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-mono dark:bg-neutral-800">{li.tcode}</span></td>
@@ -685,7 +685,7 @@ function BillingTab({ tenantId }: { tenantId: string }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                {data.history.map(h => (
+                {data.history.map((h: any) => (
                   <tr key={h.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/30">
                     <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">{MONTH_NAMES[h.period_month]} {h.period_year}</td>
                     <td className="px-4 py-3"><span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-mono dark:bg-neutral-800">{h.tcode}</span></td>

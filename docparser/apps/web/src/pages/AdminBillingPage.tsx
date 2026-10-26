@@ -70,7 +70,7 @@ export default function AdminBillingPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                {records.map((r, i) => (
+                {records.map((r: any, i: number) => (
                   <tr key={i} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
                     <td className="px-6 py-3 font-medium text-neutral-800 dark:text-white">{r.company_name}</td>
                     <td className="px-6 py-3 text-neutral-500 dark:text-neutral-400">{r.month}</td>

@@ -137,7 +137,7 @@ export default function MailInboxPage() {
         )}
 
         <div className="space-y-3">
-          {docs.map(doc => (
+          {docs.map((doc: any) => (
             <Link
               key={doc.document_id}
               to={`/documents/${doc.document_id}`}

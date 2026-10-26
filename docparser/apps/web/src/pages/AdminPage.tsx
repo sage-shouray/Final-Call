@@ -141,7 +141,7 @@ export default function AdminPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                {companies.map(c => (
+                {companies.map((c: any) => (
                   <tr
                     key={c.id}
                     className="hover:bg-neutral-50 dark:hover:bg-neutral-800/50 cursor-pointer transition-colors"

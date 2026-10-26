@@ -80,7 +80,7 @@ export default function AdminActivityPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                {docs.map(d => (
+                {docs.map((d: any) => (
                   <tr key={d.document_id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/30">
                     <td className="px-5 py-3 font-medium text-neutral-800 dark:text-white">{d.company_name}</td>
                     <td className="px-5 py-3 font-mono text-xs text-neutral-500 dark:text-neutral-400">{d.document_id}</td>

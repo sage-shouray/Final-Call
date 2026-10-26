@@ -192,7 +192,7 @@ export default function DashboardPage() {
   const pendingAlert = (metrics?.pending_review ?? 0) > 10;
 
   // By-tcode bars
-  const tcodeTotal = metrics?.by_tcode.reduce((s, t) => s + t.count, 0) ?? 0;
+  const tcodeTotal = metrics?.by_tcode.reduce((s: number, t: any) => s + t.count, 0) ?? 0;
 
   // By-status bars — only terminal/notable statuses
   const statusOrder = ['posted', 'validated', 'extracted', 'failed', 'uploading'];
@@ -203,7 +203,7 @@ export default function DashboardPage() {
     failed:    'bg-red-400',
     uploading: 'bg-neutral-300 dark:bg-neutral-600',
   };
-  const statusTotal = metrics?.by_status.reduce((s, t) => s + t.count, 0) ?? 0;
+  const statusTotal = metrics?.by_status.reduce((s: number, t: any) => s + t.count, 0) ?? 0;
   const sortedStatuses = [...(metrics?.by_status ?? [])].sort(
     (a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status),
   );
@@ -380,7 +380,7 @@ export default function DashboardPage() {
                 : metrics?.by_tcode.length
                   ? (
                     <div className="space-y-3">
-                      {metrics.by_tcode.map((t, i) => (
+                      {metrics.by_tcode.map((t: any, i: number) => (
                         <BarRow
                           key={t.tcode}
                           label={t.tcode}

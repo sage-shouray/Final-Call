@@ -38,8 +38,8 @@ export default function TeamPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['team'] }),
   });
 
-  const active   = members.filter(m => m.is_active);
-  const inactive = members.filter(m => !m.is_active);
+  const active   = members.filter((m: any) => m.is_active);
+  const inactive = members.filter((m: any) => !m.is_active);
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
@@ -107,7 +107,7 @@ export default function TeamPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-              {members.map(m => (
+              {members.map((m: any) => (
                 <tr key={m.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
                   <td className="px-5 py-3 font-medium text-neutral-900 dark:text-white">{m.name}</td>
                   <td className="px-5 py-3 text-neutral-500 dark:text-neutral-400">{m.email}</td>

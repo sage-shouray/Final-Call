@@ -198,7 +198,7 @@ export default function ReportsPage() {
 
   // Recent docs sorted newest first, limited to 10
   const recentPosted = docs
-    .filter(d => d.status === DocumentStatus.POSTED)
+    .filter((d: any) => d.status === DocumentStatus.POSTED)
     .slice(0, 10);
 
   return (
@@ -259,7 +259,7 @@ export default function ReportsPage() {
               {isLoading
                 ? Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-8 w-full" />)
                 : (metrics?.by_type ?? []).length
-                  ? metrics!.by_type.map((t, i) => (
+                  ? metrics!.by_type.map((t: any, i: number) => (
                       <BarRow
                         key={t.type}
                         label={DOC_TYPE_LABEL[t.type as keyof typeof DOC_TYPE_LABEL] ?? t.type}
@@ -282,7 +282,7 @@ export default function ReportsPage() {
             <div className="space-y-4">
               {isLoading
                 ? Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-8 w-full" />)
-                : (metrics?.by_tcode ?? []).map((t, i) => (
+                : (metrics?.by_tcode ?? []).map((t: any, i: number) => (
                     <BarRow key={t.tcode} label={t.tcode} count={t.count}
                       percentage={t.percentage} color={TCODE_COLORS[i % TCODE_COLORS.length]} loading={false} />
                   ))
@@ -294,7 +294,7 @@ export default function ReportsPage() {
             <div className="space-y-4">
               {isLoading
                 ? Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-8 w-full" />)
-                : (metrics?.by_status ?? []).map(s => (
+                : (metrics?.by_status ?? []).map((s: any) => (
                     <BarRow key={s.status} label={s.status.replace('_', ' ')} count={s.count}
                       percentage={s.percentage}
                       color={STATUS_COLORS[s.status] ?? 'bg-neutral-400 dark:bg-neutral-600'}

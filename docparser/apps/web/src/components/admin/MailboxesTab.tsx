@@ -220,7 +220,7 @@ export function MailboxesTab({ tenantId }: { tenantId: string }) {
         </div>
       )}
 
-      {mailboxes.map(mb => {
+      {mailboxes.map((mb: any) => {
         const result = testResult[mb.id];
         return (
           <div key={mb.id} className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">

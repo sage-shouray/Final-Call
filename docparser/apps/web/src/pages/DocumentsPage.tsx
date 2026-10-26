@@ -635,7 +635,7 @@ export default function DocumentsPage() {
                         </TableCell>
                       </TableRow>
                     )
-                  : docs.map((doc) => (
+                  : docs.map((doc: any) => (
                       <TableRow
                         key={doc.id}
                         className="cursor-pointer"

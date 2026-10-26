@@ -399,7 +399,7 @@ function AuditDrawer({ docId, open, onClose }: { docId: string; open: boolean; o
 
           {!isLoading && entries && entries.length > 0 && (
             <div className="space-y-3">
-              {entries.map((e, i) => (
+              {entries.map((e: any, i: number) => (
                 <div key={e.id ?? i} className="rounded-lg border border-neutral-100 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-800/50">
                   <div className="flex items-start justify-between gap-2">
                     <span className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">
@@ -504,7 +504,7 @@ function GroupTabs({
         <Layers className="h-3.5 w-3.5" />
         {docs.length} invoices found in this upload:
       </div>
-      {docs.map((d) => (
+      {docs.map((d: any) => (
         <button
           key={d.document_id}
           type="button"
@@ -868,7 +868,7 @@ function DocumentDetailView({ id }: { id: string | undefined }) {
                           </tr>
                         </thead>
                         <tbody>
-                          {extracted.line_items.map((li, i) => (
+                          {extracted.line_items.map((li: any, i: number) => (
                             <tr key={i} className="border-b border-neutral-50 last:border-0 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-800/40">
                               <td className="px-3 py-2 font-mono text-neutral-500 dark:text-neutral-400">{li.line_number}</td>
                               <td className="px-3 py-2 font-mono text-neutral-600 dark:text-neutral-400">{li.material_code}</td>
@@ -919,7 +919,7 @@ function DocumentDetailView({ id }: { id: string | undefined }) {
                       Mismatches ({validation.mismatches.length})
                     </p>
                     <div className="divide-y divide-neutral-100 rounded-lg border border-neutral-100 overflow-hidden dark:divide-neutral-800 dark:border-neutral-800">
-                      {validation.mismatches.map((m, i) => (
+                      {validation.mismatches.map((m: any, i: number) => (
                         <div key={i} className={cn(
                           'flex items-start gap-3 px-3 py-2.5 text-xs',
                           m.severity === 'error' ? 'bg-red-50/50 dark:bg-red-950/30' : 'bg-amber-50/50 dark:bg-amber-950/30',
@@ -1211,7 +1211,7 @@ function DocumentDetailView({ id }: { id: string | undefined }) {
             {doc.error_log && doc.error_log.length > 0 && (
               <Collapsible title={`Error Log (${doc.error_log.length})`} defaultOpen={status === DocumentStatus.FAILED}>
                 <div className="divide-y divide-neutral-100 rounded-lg border border-neutral-100 overflow-hidden dark:divide-neutral-800 dark:border-neutral-800">
-                  {doc.error_log.map((e, i) => (
+                  {doc.error_log.map((e: any, i: number) => (
                     <div key={i} className="bg-red-50/40 px-3 py-2.5 text-xs dark:bg-red-950/20">
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-semibold text-red-700 dark:text-red-400">{e.stage}</span>

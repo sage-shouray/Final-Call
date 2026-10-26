@@ -104,7 +104,7 @@ export default function BillingPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                {data.line_items.map(li => (
+                {data.line_items.map((li: any) => (
                   <tr key={li.tcode} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
                     <td className="px-6 py-4 font-medium text-neutral-900 dark:text-white">{li.label}</td>
                     <td className="px-6 py-4"><span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-mono dark:bg-neutral-800">{li.tcode}</span></td>
@@ -141,7 +141,7 @@ export default function BillingPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                {data.history.map(h => (
+                {data.history.map((h: any) => (
                   <tr key={h.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
                     <td className="px-6 py-4 text-neutral-600 dark:text-neutral-400">{MONTH_NAMES[h.period_month]} {h.period_year}</td>
                     <td className="px-6 py-4"><span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-mono dark:bg-neutral-800">{h.tcode}</span></td>
