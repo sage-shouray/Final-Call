@@ -1,0 +1,62 @@
+name: CD
+
+# Runs only after CI has passed on main or EXT+SEG. Waits for manual approval
+# (the "production" environment's required reviewer) before touching the
+# server — this never deploys on its own.
+#
+# Deploys by syncing the whole docparser/ tree to the server and rebuilding,
+# rather than copying a hand-picked list of files. The old manual process
+# (clone to a temp dir, cp specific files, rebuild) repeatedly shipped
+# incomplete deploys this engagement because it's easy to forget a changed
+# file — syncing the whole tree makes that failure mode impossible.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main, "EXT\\+SEG"]
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up deploy key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync source to server
+        # No --delete: this only adds/updates files, never removes anything
+        # on the server on its own. .env and uploaded invoice PDFs are never
+        # touched — they don't exist in this repo checkout to sync from.
+        run: |
+          rsync -az \
+            --exclude 'node_modules' \
+            --exclude '.git' \
+            --exclude '__pycache__' \
+            --exclude '.venv' \
+            --exclude 'data/uploads' \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            ./docparser/ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/ap/app/"
+
+      - name: Rebuild and restart
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "cd /opt/ap/app/docker && docker compose up -d --build api web"
+
+      - name: Health check
+        run: |
+          sleep 10
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "curl -sf http://127.0.0.1:8000/api/health/ready"
