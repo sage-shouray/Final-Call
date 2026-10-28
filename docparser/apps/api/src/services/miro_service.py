@@ -241,6 +241,28 @@ def build_miro_payload(
         # gates upstream exist to catch before this payload is ever built, so
         # it is not re-litigated here.
 
+    # Every line above was built with tax_amount=0 as a placeholder — SAP's
+    # own confirmed payload structure (and the Service PO builder below,
+    # which already did this) expects the real per-line tax, not zero.
+    # header gross_amount includes tax while the line item_amounts above are
+    # all pre-tax net, so leaving tax_amount at 0 means sum(item_amount) can
+    # never reconcile against gross_amount — exactly the kind of mismatch
+    # SAP can reject with a misleading, unrelated-looking error. Split the
+    # invoice's total tax across lines proportionally to each line's net
+    # amount (the only allocation that's correct when multiple lines or a
+    # split-GR invoice have different per-line tax rates we never extracted).
+    total_tax = _safe_float(extracted.get("tax_amount") or 0)
+    total_net = sum(line.item_amount for line in item_data)
+    if total_tax > 0 and total_net > 0:
+        allocated = 0
+        for i, line in enumerate(item_data):
+            if i == len(item_data) - 1:
+                line.tax_amount = round(total_tax) - allocated
+            else:
+                share = round(total_tax * (line.item_amount / total_net))
+                line.tax_amount = share
+                allocated += share
+
     # Always "X" — confirmed with the MM consultant. An earlier attempt to
     # leave this blank for zero-tax lines hit the same SAP rejection either
     # way, so the fix for that error lies elsewhere (the TAXDATA structure
