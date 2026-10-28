@@ -161,8 +161,15 @@ async def validate_invoice_against_po(
         inv_qty = _dec(inv_line.get("quantity", "0"))
         if sap_line is not None:
             if sap_line.GRN:
-                total_gr_qty = sum(_dec(grn.GR_QUANTITY) for grn in sap_line.GRN)
-                gr_docs = [grn.GR_NUMBER for grn in sap_line.GRN if grn.GR_NUMBER]
+                # Mirror build_miro_payload's own filtering (miro_service._real_grns):
+                # when any movement-105 (released) entries exist on the line, only
+                # those count — blocked (103) stock isn't a usable MIRO reference,
+                # so counting it here would show coverage the payload itself can't
+                # actually use.
+                released = [grn for grn in sap_line.GRN if (grn.MOVEMENT_TYPE or "").strip() == "105"]
+                usable_grns = released if released else sap_line.GRN
+                total_gr_qty = sum(_dec(grn.GR_QUANTITY) for grn in usable_grns)
+                gr_docs = [grn.GR_NUMBER for grn in usable_grns if grn.GR_NUMBER]
             else:
                 # No GRN entries — use RECEIVED_QUANTITY from PO line
                 total_gr_qty = _dec(sap_line.RECEIVED_QUANTITY)
@@ -194,12 +201,21 @@ async def validate_invoice_against_po(
         + line_confidence * 0.40
         + gr_confidence * 0.20
     )
-    # Consider valid if PO was found (has PO_NUMBER) and overall score ≥ 0.60
+    # Consider valid if PO was found (has PO_NUMBER) and overall score ≥ 0.60.
+    # gr_confidence is a hard requirement, not just 20% of the weighted score:
+    # a clean header/line match alone can clear 0.60 even with zero GR coverage
+    # (1.0*0.4 + 1.0*0.4 + 0.0*0.2 = 0.80), which used to get marked "approved
+    # for MIRO posting" — SAP then rejects it outright since MIRO cannot post
+    # without a real goods-receipt reference. Blocking here catches that before
+    # wasting a call to SAP, and stops a document from being falsely reported
+    # as approved.
     po_found = bool(sap_po.PO_NUMBER)
-    is_valid = po_found and overall_confidence >= 0.60
+    is_valid = po_found and overall_confidence >= 0.60 and gr_confidence > 0.0
 
     recommendation = (
         "Document is approved for MIRO posting." if is_valid
+        else "No goods receipt found covering this invoice — cannot post to MIRO until stock is received against this PO."
+        if po_found and gr_confidence == 0.0
         else "Document requires manual review before posting." if overall_confidence >= 0.40
         else "Document has critical mismatches — do not post to SAP."
     )
