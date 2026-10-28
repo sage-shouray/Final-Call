@@ -49,7 +49,17 @@ def _mismatch(field: str, extracted_value: str, sap_value: str, severity: str = 
 async def validate_invoice_against_po(
     extracted: dict[str, Any],
     sap_po: SAPPOResponse,
+    *,
+    require_gr_coverage: bool = True,
 ) -> dict[str, Any]:
+    """require_gr_coverage=False is for migo_worker's pre-GRN-103 check in the
+    quality-hold workflow: at that point, by design, no goods receipt exists
+    yet for THIS invoice — posting GRN-103 is literally the step that creates
+    one. Requiring GR coverage before that step is circular and would block
+    every quality-hold invoice unconditionally. Every other caller validates
+    against GR data that may already genuinely exist in SAP, where the
+    standard requirement (no real coverage -> not valid) is correct.
+    """
     mismatches: list[dict[str, str]] = []
     header_scores: dict[str, float] = {}
 
@@ -210,12 +220,13 @@ async def validate_invoice_against_po(
     # wasting a call to SAP, and stops a document from being falsely reported
     # as approved.
     po_found = bool(sap_po.PO_NUMBER)
-    is_valid = po_found and overall_confidence >= 0.60 and gr_confidence > 0.0
+    gr_ok = gr_confidence > 0.0 or not require_gr_coverage
+    is_valid = po_found and overall_confidence >= 0.60 and gr_ok
 
     recommendation = (
         "Document is approved for MIRO posting." if is_valid
         else "No goods receipt found covering this invoice — cannot post to MIRO until stock is received against this PO."
-        if po_found and gr_confidence == 0.0
+        if po_found and not gr_ok
         else "Document requires manual review before posting." if overall_confidence >= 0.40
         else "Document has critical mismatches — do not post to SAP."
     )

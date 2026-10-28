@@ -65,7 +65,9 @@ async def run_migo_103_direct(document_id: str) -> None:
             # problem. The second check (invoice vs what's actually released)
             # happens later, in run_miro_park_direct, right before posting.
             from src.services.validation_service import validate_invoice_against_po
-            pre_check = await validate_invoice_against_po(extracted, sap_po)
+            # No GR can exist yet for this invoice — posting GRN-103 below is
+            # what creates one. Requiring GR coverage here would be circular.
+            pre_check = await validate_invoice_against_po(extracted, sap_po, require_gr_coverage=False)
             # Saved regardless of pass/fail — this IS the document's SAP PO
             # validation, same field the dedicated /validate endpoint writes,
             # just run automatically here instead of waiting for a manual
