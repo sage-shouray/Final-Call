@@ -88,6 +88,39 @@ def _real_grns(sap_line: Any) -> list[Any]:
     return released if released else real
 
 
+def _released_quantity(sap_line: Any) -> float:
+    """Total quantity released from quality hold (movement 105) on this line.
+
+    0.0 means either nothing has been released yet, or this isn't a
+    quality-hold PO at all (no 103/105 distinction present).
+    """
+    return sum(
+        _safe_float(grn.GR_QUANTITY)
+        for grn in (getattr(sap_line, "GRN", None) or [])
+        if (grn.MOVEMENT_TYPE or "").strip() == "105"
+    )
+
+
+def _reference_grns(sap_line: Any) -> list[Any]:
+    """The goods-receipt documents a MIRO line should actually *cite* as its
+    reference. SAP confirmed: on a quality-hold PO, MIRO must reference the
+    original movement-103 document (the one that actually received the
+    physical goods), not the 105 release posting — a 105 entry represents a
+    stock-status change, not a document type MIRO's reference check accepts.
+    The 105 data still governs *quantity* (via _released_quantity, the real
+    availability ceiling) — only which document number gets cited here.
+
+    Falls back to every real entry on a standard, non-quality-hold PO where
+    this 103/105 distinction doesn't exist at all.
+    """
+    real = [
+        grn for grn in (getattr(sap_line, "GRN", None) or [])
+        if (grn.GR_NUMBER or "").strip().strip("0")
+    ]
+    blocked = [grn for grn in real if (grn.MOVEMENT_TYPE or "").strip() == "103"]
+    return blocked if blocked else real
+
+
 def _match_invoice_line(
     sap_item_number: str, idx: int, inv_lines: list[dict[str, Any]]
 ) -> dict[str, Any] | None:
@@ -193,7 +226,16 @@ def build_miro_payload(
             invoiced_qty if 0 < invoiced_qty < line_qty - 1e-6 else line_qty
         )
 
-        grns = _real_grns(sap_line)
+        # On a quality-hold line, never post more than has actually been
+        # released from blocked stock — released_qty is 0.0 on a standard
+        # PO (no 103/105 distinction), where this is a no-op.
+        released_qty = _released_quantity(sap_line)
+        if released_qty > 0:
+            qty_to_post = min(qty_to_post, released_qty)
+
+        # SAP confirmed: reference the original movement-103 document(s),
+        # not the 105 release posting — see _reference_grns.
+        grns = _reference_grns(sap_line)
 
         if not grns:
             # Not GR-based — no reference, post whatever quantity this invoice
