@@ -629,6 +629,41 @@ async def run_miro_park_direct(document_id: str, posted_by: str = "system") -> N
 
         except Exception as exc:
             bound_log.error("direct MIRO parking failed", error=str(exc), traceback=_tb.format_exc())
+
+            # Same no-retry rule as run_miro_direct, same failure mode: a
+            # transport-level error can happen after SAP already created the
+            # parked document. Check before reporting failure.
+            recovered = False
+            _po = locals().get("po_number") or ""
+            _doc_id = locals().get("doc_id") or ""
+            if _po and _doc_id:
+                try:
+                    details = await sap_service.fetch_miro_details(_po)
+                    if details.miro_posted:
+                        park_number = details.DATA[0].INVOICE_DOCUMENT
+                        bound_log.warning(
+                            "MIRO park call errored but SAP already has the document — "
+                            "recovering instead of reporting failure",
+                            park_number=park_number,
+                        )
+                        parking_data = {
+                            "parked_at":    datetime.now(UTC).isoformat(),
+                            "payload_sent": (locals().get("payload").model_dump()
+                                             if locals().get("payload") else {}),
+                            "park_number":  park_number,
+                            "sap_response": details.model_dump(),
+                            "status":       MIROStatus.SUCCESS.value,
+                            "recovered_after_error": True,
+                        }
+                        await doc_repo.update_miro_parking(_doc_id, parking_data)
+                        await session.commit()
+                        recovered = True
+                except Exception as lookup_exc:
+                    bound_log.warning("post-failure MIRO park recovery check failed", error=str(lookup_exc))
+
+            if recovered:
+                return
+
             error_entry: dict[str, Any] = {
                 "stage": "miro_parking", "message": str(exc) or type(exc).__name__,
                 "detail": type(exc).__name__, "timestamp": datetime.now(UTC).isoformat(),
