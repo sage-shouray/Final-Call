@@ -61,6 +61,19 @@ const INITIAL: WizardState = {
   miroAction:        'post',
 };
 
+// A second click (fired before the status refresh catches up, or a double
+// submit) hits the backend's own "already posted" guard. That guard existing
+// is correct; treating its rejection as a user-facing failure is not — the
+// invoice already posted on the first click.
+function isAlreadyPostedError(err: unknown): boolean {
+  const data = (err as { response?: { data?: { error?: { code?: string; message?: string } } } })
+    ?.response?.data?.error;
+  if (!data) return false;
+  if (data.code === 'ALREADY_POSTED') return true;
+  return data.code === 'INVALID_STATUS_TRANSITION'
+    && /current:\s*(posted|parked)\b/i.test(data.message ?? '');
+}
+
 // ─── Step config ──────────────────────────────────────────────────────────────
 
 const MIRO_STEPS = [
@@ -452,7 +465,13 @@ export default function UploadPage() {
     setState((s) => ({ ...s, step: 'posting', miroAction: 'post' }));
     try {
       await api.post(`/documents/${state.documentId}/post-miro`);
-    } catch {
+    } catch (err) {
+      // A document already posted (e.g. a stale button re-clicked before the
+      // status refresh caught up) is not a real failure — it already worked.
+      if (isAlreadyPostedError(err)) {
+        await fetchDocumentAndAdvance(state.documentId, 'complete');
+        return;
+      }
       toast.error('Failed to trigger MIRO posting. Retrying…');
       setState((s) => ({ ...s, step: isMigo ? 'gr_posted' : 'validated' }));
     }
@@ -465,7 +484,11 @@ export default function UploadPage() {
     setState((s) => ({ ...s, step: 'posting', miroAction: 'park' }));
     try {
       await api.post(`/documents/${state.documentId}/park-miro`);
-    } catch {
+    } catch (err) {
+      if (isAlreadyPostedError(err)) {
+        await fetchDocumentAndAdvance(state.documentId, 'complete');
+        return;
+      }
       toast.error('Failed to trigger MIRO parking. Please retry.');
       setState((s) => ({ ...s, step: 'validated' }));
     }
