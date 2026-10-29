@@ -484,6 +484,44 @@ async def run_miro_direct(document_id: str, posted_by: str = "system") -> None:
 
         except Exception as exc:
             bound_log.error("direct MIRO posting failed", error=str(exc), traceback=_tb.format_exc())
+
+            # The POST to SAP has no retry (by design — a retry on a real
+            # failure could double-post the invoice). But a transport-level
+            # failure (timeout, dropped connection, the ZMIRO auth hiccup)
+            # can happen *after* SAP already created the document — we just
+            # never saw the response. Before reporting a failure, ask SAP
+            # (read-only, so safe) whether the invoice is actually there.
+            recovered = False
+            _po = locals().get("po_number") or ""
+            _doc_id = locals().get("doc_id") or ""
+            if _po and _doc_id:
+                try:
+                    details = await sap_service.fetch_miro_details(_po)
+                    if details.miro_posted:
+                        miro_number = details.DATA[0].INVOICE_DOCUMENT
+                        bound_log.warning(
+                            "MIRO call errored but SAP already has the document — "
+                            "recovering instead of reporting failure",
+                            miro_number=miro_number,
+                        )
+                        posting_data = {
+                            "posted_at":    datetime.now(UTC).isoformat(),
+                            "payload_sent": (locals().get("payload").model_dump()
+                                             if locals().get("payload") else {}),
+                            "miro_number":  miro_number,
+                            "sap_response": details.model_dump(),
+                            "status":       MIROStatus.SUCCESS.value,
+                            "recovered_after_error": True,
+                        }
+                        await doc_repo.update_miro_posting(_doc_id, posting_data)
+                        await session.commit()
+                        recovered = True
+                except Exception as lookup_exc:
+                    bound_log.warning("post-failure MIRO recovery check failed", error=str(lookup_exc))
+
+            if recovered:
+                return
+
             error_entry: dict[str, Any] = {
                 "stage": "miro_posting", "message": str(exc) or type(exc).__name__,
                 "detail": type(exc).__name__, "timestamp": datetime.now(UTC).isoformat(),
